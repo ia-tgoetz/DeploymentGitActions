@@ -1,0 +1,87 @@
+##################################################################
+# SE Demo Compose Stack
+#
+# Adam Koch, Inductive Automation
+#
+# ${foo:-bar} denotes an environmental variable "foo" with a
+#    default value "bar"
+##################################################################
+
+# Ignition Gateways
+##################################################################
+services:
+  # Ignition dev gateway. Engineering workstation 1
+  # access gateway with http://{IGN_NAME}.pde-021.ia.local
+  # where IGN_NAME is the value of the IGN_NAME env variable
+  demo-vcs-modes:
+    image: inductiveautomation/ignition:${IGN_RELEASE:-latest}
+    user: 0:0
+    container_name: ${IGN_NAME:-demo-vcs-modes-dev}
+    pull_policy: always
+    restart: always
+    # ports:
+    #   - ${IGN_PORT:-8089}:8088
+    volumes:
+      - ign-demo-vcs-modes-data:/usr/local/bin/ignition/data
+      - ign-demo-vcs-modes-resources:/usr/local/bin/ignition/data/config/resources
+      - ign-demo-vcs-modes-projects:/usr/local/bin/ignition/data/projects
+    labels:
+      - traefik.enable=true
+      - traefik.hostname=${IGN_NAME:-demo-vcs-modes-dev}
+    environment:
+      IGNITION_UID: ${IGN_UID:-1004}
+      IGNITION_GID: ${IGN_GID:-1004}
+      ACCEPT_IGNITION_EULA: 'Y'
+      GATEWAY_ADMIN_USERNAME: admin
+      GATEWAY_ADMIN_PASSWORD: password
+      IGNITION_EDITION: standard
+      TZ: ${TZ:-America/Chicago}
+    command: >
+      -n ${IGN_NAME:-demo-vcs-modes-dev}
+      -h 80
+      -s 443
+      -a ${IGN_NAME:-demo-vcs-modes-dev}.sedemo.ia.local
+      --
+      -Dignition.config.mode=${IGN_MODE:-dev}
+    networks:
+      # - vcsDemoNet
+      - vcsProxy
+
+  # Dev Postgres Database
+  postgres:
+    image: postgres:15.4
+    container_name: ${POSTGRES_CONTAINER_NAME:-postgres-vcs-dev}
+    restart: always
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASS:-password}
+      POSTGRES_USER: ${POSTGRES_USERNAME:-admin}
+      POSTGRES_DB: ${POSTGRES_NAME:-postgres}
+      TZ: ${TZ:-America/Chicago}
+    # ports:
+    #  - ${POSTGRES_PORT:-5432}:5432
+    volumes:
+      - postgresVcsDemo:/var/lib/postgresql/data
+    networks:
+      - vcsProxy
+
+networks:
+  vcsProxy:
+    external: true
+    name: proxy
+
+volumes:
+  ign-demo-vcs-modes-data:
+  ign-demo-vcs-modes-resources:
+    driver: local
+    driver_opts:
+      type: none
+      device: services/config/resources
+      o: bind
+  ign-demo-vcs-modes-projects:
+    driver: local
+    driver_opts:
+      type: none
+      device: services/projects
+      o: bind
+  postgresVcsDemo:
+

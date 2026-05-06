@@ -1,0 +1,59 @@
+# Full test environment — adds MQTT broker and central gateway
+# Usage: docker compose -f docker-compose.yml -f docker-compose.test.yml up -d
+
+services:
+  ignition-edge:
+    depends_on:
+      mosquitto:
+        condition: service_started
+      ignition-central:
+        condition: service_healthy
+
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: mosquitto
+    ports:
+      - "1883:1883"
+      - "8883:8883"
+    volumes:
+      - ./test/mosquitto/config/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./certs:/mosquitto/certs:ro
+      - mosquitto-data:/mosquitto/data
+    networks:
+      - ignition-net
+
+  # Simulates the central gateway for GAN testing
+  ignition-central:
+    image: inductiveautomation/ignition:${IGN_RELEASE:-8.3.6}
+    user: 0:0
+    container_name: ignition-central
+    restart: unless-stopped
+    ports:
+      - "9088:8088"
+      - "9043:8043"
+      - "9060:8060"
+    environment:
+      IGNITION_UID: ${IGNITION_UID:-1000}
+      IGNITION_GID: ${IGNITION_GID:-1000}
+      ACCEPT_IGNITION_EULA: "Y"
+      GATEWAY_ADMIN_USERNAME: ${GATEWAY_ADMIN_USERNAME:?GATEWAY_ADMIN_USERNAME is required}
+      GATEWAY_ADMIN_PASSWORD: ${GATEWAY_ADMIN_PASSWORD:?GATEWAY_ADMIN_PASSWORD is required}
+      TZ: ${TZ:-America/Chicago}
+    command: >
+      -n ignition-central
+      -h 8088
+      -s 8043
+    volumes:
+      - ignition-central-data:/usr/local/bin/ignition/data
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8088/StatusPing"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 120s
+    networks:
+      - ignition-net
+
+volumes:
+  mosquitto-data:
+  ignition-central-data:

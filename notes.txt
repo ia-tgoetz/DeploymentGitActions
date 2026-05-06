@@ -1,0 +1,38 @@
+Preload using EAM 
+API Key but still need to preload 
+
+What is the expectations
+
+how much can we assume is preloaded
+
+150 sites
+
+deal 2 5000 sites
+37000 devices
+
+Q1 of next year.
+
+
+--Initial 1:
+Preconfigured.
+Download
+How to apply configuration.
+How to upload project.
+Project Configuration:
+- Via Manual
+- Via EAM
+- Via API
+- Via 
+
+Chevron Contact:
+--Gateway and Project Configuration Via
+--EAM posses issues with 
+--is this a git agent?
+
+Nathan's notes:
+
+Chevron Demo Scenarios:
+ - Deployment of Ignition and project in real-time manually (Same tags as previous demo)
+ - Deployment of Ignition project via EAM to existing edge GW
+ - Deployment of Ignition project via scripting to existing edge GW
+ - Deployment of Ignition and project in real-time using orchestration engine (Barbara)

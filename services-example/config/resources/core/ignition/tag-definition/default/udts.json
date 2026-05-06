@@ -1,0 +1,51 @@
+[
+  {
+    "name": "Tank100",
+    "typeId": "Tank",
+    "tagType": "UdtInstance"
+  },
+  {
+    "name": "Tank102",
+    "typeId": "Tank",
+    "parameters": {
+      "tankNum": {
+        "dataType": "Integer",
+        "value": 102
+      }
+    },
+    "tagType": "UdtInstance"
+  },
+  {
+    "name": "Tank103",
+    "typeId": "Tank",
+    "parameters": {
+      "tankNum": {
+        "dataType": "Integer",
+        "value": 103
+      }
+    },
+    "tagType": "UdtInstance"
+  },
+  {
+    "name": "Tank101",
+    "typeId": "Tank",
+    "parameters": {
+      "tankNum": {
+        "dataType": "Integer",
+        "value": 101
+      }
+    },
+    "tagType": "UdtInstance"
+  },
+  {
+    "name": "Tank104",
+    "typeId": "Tank",
+    "parameters": {
+      "tankNum": {
+        "dataType": "Integer",
+        "value": 104
+      }
+    },
+    "tagType": "UdtInstance"
+  }
+]

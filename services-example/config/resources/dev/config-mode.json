@@ -1,0 +1,7 @@
+{
+  "title": "dev",
+  "description": "mode for development systems",
+  "enabled": true,
+  "inheritable": true,
+  "parent": "core"
+}

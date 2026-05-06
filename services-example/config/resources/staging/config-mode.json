@@ -1,0 +1,7 @@
+{
+  "title": "staging",
+  "description": "Stage Before Production Release",
+  "enabled": true,
+  "inheritable": true,
+  "parent": "core"
+}

@@ -1,0 +1,15 @@
+# Database files
+*.idb
+
+# Runtime configuration (environment-specific)
+**/local
+
+# Project conversion artifacts
+**/projects/conversion-report.txt
+**/migration-log-*.md
+
+# Ignition binary resource blobs (auto-generated)
+**/.resources/
+
+# Environment variable files
+*.env

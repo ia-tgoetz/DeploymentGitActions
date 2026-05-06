@@ -1,0 +1,10 @@
+# Ensure shell scripts always use LF on the Linux IPC
+*.sh text eol=lf
+
+# Force LF for all YAML and JSON
+*.yml text eol=lf
+*.yaml text eol=lf
+*.json text eol=lf
+
+# Default: normalize to LF in the repo, checkout as native on each OS
+* text=auto

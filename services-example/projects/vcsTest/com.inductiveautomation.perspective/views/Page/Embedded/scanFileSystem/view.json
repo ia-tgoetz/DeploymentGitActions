@@ -1,0 +1,181 @@
+{
+  "custom": {},
+  "params": {},
+  "props": {
+    "defaultSize": {
+      "height": 300,
+      "width": 300
+    }
+  },
+  "root": {
+    "children": [
+      {
+        "events": {
+          "component": {
+            "onActionPerformed": {
+              "config": {
+                "script": "\tself.parent.custom.refreshTimer.running\u003dTrue\n\tself.parent.custom.json\u003dself.parent.scanFileSystem(scanConfigs\u003dTrue, scanProjects\u003dTrue)\n\tself.parent.custom.refreshTimer.running\u003dFalse"
+              },
+              "scope": "G",
+              "type": "script"
+            }
+          }
+        },
+        "meta": {
+          "name": "StartScan"
+        },
+        "position": {
+          "basis": "34px"
+        },
+        "props": {
+          "style": {
+            "margin": "2px"
+          },
+          "text": "Start Scan"
+        },
+        "type": "ia.input.button"
+      },
+      {
+        "events": {
+          "component": {
+            "onActionPerformed": {
+              "config": {
+                "script": "\tself.parent.custom.json\u003dself.parent.checkScanStatus(scanConfigs\u003dTrue, scanProjects\u003dTrue)"
+              },
+              "scope": "G",
+              "type": "script"
+            }
+          }
+        },
+        "meta": {
+          "name": "ScanStatus"
+        },
+        "position": {
+          "basis": "34px"
+        },
+        "props": {
+          "style": {
+            "margin": "2px"
+          },
+          "text": "Check Scan Status"
+        },
+        "type": "ia.input.button"
+      },
+      {
+        "meta": {
+          "name": "Markdown"
+        },
+        "position": {
+          "grow": 1
+        },
+        "propConfig": {
+          "props.source": {
+            "binding": {
+              "config": {
+                "struct": {
+                  "boolStyle": "\"color:var(--qual-9);font-size:1.1em\"",
+                  "indent": 2,
+                  "json": "{parent.custom.jsonString}",
+                  "keyStyle": "\"font-weight:bold\"",
+                  "nullStyle": "\"color:var(--error);font-size:1.1em;font-style:italic\"",
+                  "numericStyle": "\"font-weight:bold;color:var(--qual-7);font-size:1.1em\"",
+                  "stringStyle": "\"color:var(--qual-2);font-weight:bold\"",
+                  "symbolStyle": "\"color:var(--qual-10);font-size:1.1em\""
+                },
+                "waitOnAll": true
+              },
+              "transforms": [
+                {
+                  "code": "\timport json, re\n\tif not value.json:\n\t\treturn \"\"\n\ttry:\n\t\t# pretty print json\n\t\tjsonText \u003d \u0027\u003cpre\u003e\u003ccode\u003e\u0027 + json.dumps(json.loads(value.json), indent\u003dvalue.indent) + \u0027\u003c/pre\u003e\u003c/code\u003e\u0027\n\t\t\n\t\t# strings\n\t\tjsonText \u003d re.sub(r\u0027(\".*\"): (\".*\")\u0027, r\"\u003cspan style\u003d\u0027%s\u0027\u003e\\1\u003c/span\u003e: \u003cspan style\u003d\u0027%s\u0027\u003e\\2\u003c/span\u003e\" %(value.keyStyle, value.stringStyle), jsonText)\n\t\tjsonText \u003d re.sub(r\u0027(\\s+)(\".*\")([,\\s]*\\n)\u0027, r\"\\1\u003cspan style\u003d\u0027%s\u0027\u003e\\2\u003c/span\u003e\\3\" %value.stringStyle, jsonText)\n\t\t\n\t\t# numerics\n\t\tjsonText \u003d re.sub(r\u0027(\\s+)([\\d-][\\d.-e+]*(?:[,\\s]*\\n))\u0027, r\"\\1\u003cspan style\u003d\u0027%s\u0027\u003e\\2\u003c/span\u003e\" %value.numericStyle, jsonText)\n\n\t\t# booleans\n\t\tjsonText \u003d re.sub(r\u0027(\\s+)((?:true)|(?:false)(?:[,\\s]))\u0027, r\"\\1\u003cspan style\u003d\u0027%s\u0027\u003e\\2\u003c/span\u003e\" %value.boolStyle, jsonText)\n\n\t\t# nulls\n\t\tjsonText \u003d re.sub(r\u0027(\\s+)(null)([\\n,\\r]+)\u0027, r\"\\1\u003cspan style\u003d\u0027%s\u0027\u003e\\2\u003c/span\u003e\\3\" %value.nullStyle, jsonText)\n\n\t\t# keys\n\t\tjsonText \u003d re.sub(r\u0027(\".*\"):\u0027, r\"\u003cspan style\u003d\u0027%s\u0027\u003e\\1\u003c/span\u003e:\" %value.keyStyle, jsonText)\n\t\t\n\t\t# symbols\n\t\tjsonText \u003d re.sub(r\u0027(\\[\\]|{})([\\n,\\r]+)\u0027, r\"\u003cspan style\u003d\u0027%s\u0027\u003e\\1\u003c/span\u003e\\2\" %value.symbolStyle, jsonText)\n\t\tjsonText \u003d re.sub(r\u0027([{}\\[\\]])([\\n,\\r]+)\u0027, r\"\u003cspan style\u003d\u0027%s\u0027\u003e\\1\u003c/span\u003e\\2\" %value.symbolStyle, jsonText)\n\t\tjsonText \u003d re.sub(r\u0027(\\n[{}\\[\\]])\u0027, r\"\u003cspan style\u003d\u0027%s\u0027\u003e\\1\u003c/span\u003e\" %value.symbolStyle, jsonText)\n\t\t\n\t\t\n\t\treturn jsonText\n\texcept Exception as e:\n\t\treturn str(e)",
+                  "type": "script"
+                }
+              ],
+              "type": "expr-struct"
+            }
+          }
+        },
+        "props": {
+          "markdown": {
+            "escapeHtml": false
+          },
+          "style": {
+            "margin": "2px"
+          }
+        },
+        "type": "ia.display.markdown"
+      }
+    ],
+    "custom": {
+      "json": {
+        "ConfigScan": {
+          "code": 0,
+          "status": "Not Started"
+        },
+        "ProjectScan": {
+          "code": 0,
+          "status": "Not Started"
+        }
+      },
+      "refreshTimer": {
+        "running": false
+      }
+    },
+    "meta": {
+      "name": "root"
+    },
+    "propConfig": {
+      "custom.jsonString": {
+        "binding": {
+          "config": {
+            "path": "this.custom.json"
+          },
+          "transforms": [
+            {
+              "code": "\treturn system.util.jsonEncode(value)",
+              "type": "script"
+            }
+          ],
+          "type": "property"
+        }
+      },
+      "custom.refreshTimer.trigger": {
+        "binding": {
+          "config": {
+            "expression": "if({this.custom.refreshTimer.running},now(1000),\"OFF\")"
+          },
+          "type": "expr"
+        },
+        "onChange": {
+          "enabled": null,
+          "script": "\tself.custom.json\u003dself.checkScanStatus()"
+        }
+      }
+    },
+    "props": {
+      "direction": "column"
+    },
+    "scripts": {
+      "customMethods": [
+        {
+          "name": "scanFileSystem",
+          "params": [
+            "scanConfigs\u003dTrue",
+            "scanProjects\u003dTrue"
+          ],
+          "script": "\tfrom com.inductiveautomation.ignition.gateway import IgnitionGateway\n\tfrom java.util.concurrent import TimeUnit, TimeoutException\n\t\"\"\"\n\tForces the Ignition Gateway to scan the file system.\n\tState Mapping:\n\t0 \u003d Not Started\n\t1 \u003d Queued (Waiting to start)\n\t2 \u003d Running\n\t3 \u003d Finished (Success)\n\t4 \u003d Error / Timeout\n\t\"\"\"\n\tstateList\u003d[\"Not Started\",\"Queued (Waiting to start)\",\"Running\",\"Finished (Success)\",\"Error / Timeout\"]\n\tcontext \u003d IgnitionGateway.get()\n\tglobal_dict \u003d system.util.getGlobals()\n\n\tstatus_codes \u003d {\"ConfigScan\": {\"code\":0}, \"ProjectScan\": {\"code\":0}}\n\t\n\t# --- PRE-SCAN SETUP ---\n\tif scanConfigs:\n\t\texisting_config \u003d global_dict.get(\"ConfigScanTask\")\n\t\tif not (hasattr(existing_config, \u0027isDone\u0027) and not existing_config.isDone()):\n\t\t\tglobal_dict[\"ConfigScanTask\"] \u003d \"QUEUED\"\n\t\t\t\n\tif scanProjects:\n\t\texisting_project \u003d global_dict.get(\"ProjectScanTask\")\n\t\tif not (hasattr(existing_project, \u0027isDone\u0027) and not existing_project.isDone()):\n\t\t\tglobal_dict[\"ProjectScanTask\"] \u003d \"QUEUED\"\n\n\t# --- 1. Handle the Gateway Configuration scan (data/config) ---\n\tif scanConfigs:\n\t\ttry:\n\t\t\tif global_dict.get(\"ConfigScanTask\") \u003d\u003d \"QUEUED\":\n\t\t\t\tconfig_future \u003d context.getConfigurationManager().requestScan()\n\t\t\t\tglobal_dict[\"ConfigScanTask\"] \u003d config_future\n\t\t\telse:\n\t\t\t\tconfig_future \u003d global_dict.get(\"ConfigScanTask\")\n\t\t\t# Block the script until the scan finishes\n\t\t\tconfig_future.get(15, TimeUnit.SECONDS)\n\t\t\tstatus_codes[\"ConfigScan\"][\"code\"] \u003d 3  # 3 \u003d Finished\n\t\t\tstatus_codes[\"ConfigScan\"][\"status\"] \u003d stateList[3]\n\t\texcept TimeoutException:\n\t\t\tstatus_codes[\"ConfigScan\"][\"code\"] \u003d 4  # 4 \u003d Error/Timeout\n\t\t\tstatus_codes[\"ConfigScan\"][\"status\"] \u003d stateList[4]\n\t\texcept Exception as e:\n\t\t\tstatus_codes[\"ConfigScan\"][\"code\"] \u003d 4  # 4 \u003d Error/Timeout\n\t\t\tstatus_codes[\"ConfigScan\"][\"status\"] \u003d stateList[4]\n\t\t\t\n\t# --- 2. Handle the Project Files scan (data/projects) ---\n\tif scanProjects:\n\t\ttry:\n\t\t\tif global_dict.get(\"ProjectScanTask\") \u003d\u003d \"QUEUED\":\n\t\t\t\tproject_future \u003d context.getProjectManager().requestScan()\n\t\t\t\tglobal_dict[\"ProjectScanTask\"] \u003d project_future\n\t\t\telse:\n\t\t\t\tproject_future \u003d global_dict.get(\"ProjectScanTask\")\n\t\t\t# Block the script until the scan finishes\n\t\t\tproject_future.get(15, TimeUnit.SECONDS)\n\t\t\tstatus_codes[\"ProjectScan\"][\"code\"] \u003d 3  # 3 \u003d Finished\n\t\t\tstatus_codes[\"ProjectScan\"][\"status\"] \u003d stateList[3]\n\t\texcept TimeoutException:\n\t\t\tstatus_codes[\"ProjectScan\"][\"code\"] \u003d 4  # 4 \u003d Error/Timeout\n\t\t\tstatus_codes[\"ProjectScan\"][\"status\"] \u003d stateList[4]\n\t\texcept Exception as e:\n\t\t\tstatus_codes[\"ProjectScan\"][\"code\"] \u003d 4  # 4 \u003d Error/Timeout\n\t\t\tstatus_codes[\"ProjectScan\"][\"status\"] \u003d stateList[4]\n\n\t# --- RETURN LOGIC ---\n\treturn status_codes"
+        },
+        {
+          "name": "checkScanStatus",
+          "params": [
+            "scanConfigs\u003dTrue",
+            "scanProjects\u003dTrue"
+          ],
+          "script": "\tfrom com.inductiveautomation.ignition.gateway import IgnitionGateway\n\tfrom java.util.concurrent import TimeUnit, TimeoutException\n\t\"\"\"\n\tRetrieves the stored objects from globals for the specified scans.\n\tState Mapping:\n\t0 \u003d Not Started\n\t1 \u003d Queued (Waiting to start)\n\t2 \u003d Running\n\t3 \u003d Finished (Success)\n\t4 \u003d Error / Timeout\n\t\"\"\"\n\tstateList\u003d[\"Not Started\",\"Queued (Waiting to start)\",\"Running\",\"Finished (Success)\",\"Error / Timeout\"]\n\tglobal_dict \u003d system.util.getGlobals()\n\tdef get_status(task_name, display_name):\n\t\ttask \u003d global_dict.get(task_name)\n\t\t\n\t\t# Returns a tuple: (Text String, Integer Code)\n\t\tif task is None:\n\t\t\treturn display_name + \": Not started yet.\", 0\n\t\telif task \u003d\u003d \"QUEUED\":\n\t\t\treturn display_name + \": QUEUED (Waiting to start...)\", 1\n\t\telif hasattr(task, \u0027isDone\u0027):\n\t\t\tif not task.isDone():\n\t\t\t\treturn display_name + \": RUNNING...\", 2\n\t\t\telif task.isCompletedExceptionally():\n\t\t\t\treturn display_name + \": ERROR (Finished with exceptions).\", 4\n\t\t\telse:\n\t\t\t\treturn display_name + \": FINISHED.\", 3\n\t\telse:\n\t\t\treturn display_name + \": UNKNOWN STATE.\", 4\n\t\t\t\n\t# Lists/Dicts to hold only the requested returns\n\ttexts \u003d []\n\tints \u003d {\"ConfigScan\": {\"code\":0}, \"ProjectScan\": {\"code\":0}}\n\n\t# Check Config Scan Status if requested\n\tif scanConfigs:\n\t\tconfig_text, config_int \u003d get_status(\"ConfigScanTask\", \"Config Scan\")\n\t\ttexts.append(config_text)\n\t\tints[\"ConfigScan\"][\"code\"] \u003d config_int\n\t\tints[\"ConfigScan\"][\"status\"] \u003d stateList[config_int]\n\t\t\n\t# Check Project Scan Status if requested\n\tif scanProjects:\n\t\tproject_text, project_int \u003d get_status(\"ProjectScanTask\", \"Project Scan\")\n\t\ttexts.append(project_text)\n\t\tints[\"ProjectScan\"][\"code\"] \u003d project_int\n\t\tints[\"ProjectScan\"][\"status\"] \u003d stateList[project_int]\n\t# --- RETURN LOGIC ---\n\treturn ints"
+        }
+      ],
+      "extensionFunctions": null,
+      "messageHandlers": []
+    },
+    "type": "ia.container.flex"
+  }
+}

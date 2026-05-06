@@ -1,0 +1,13 @@
+# Database files
+*.idb
+
+# Runtime configuration (environment-specific)
+**/local
+
+# Project conversion artifacts
+**/projects/conversion-report.txt
+**/migration-log-*.md
+**/.resources/
+
+# Environmental Variables file
+*.env

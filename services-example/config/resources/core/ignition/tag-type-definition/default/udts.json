@@ -1,0 +1,125 @@
+[
+  {
+    "name": "Tank",
+    "parameters": {
+      "tankNum": {
+        "dataType": "Integer",
+        "value": 100
+      }
+    },
+    "tagType": "UdtType",
+    "tags": [
+      {
+        "opcItemPath": {
+          "bindType": "parameter",
+          "binding": "ns\u003d1;s\u003d[TankPLC]Global.Tank{tankNum}.HOA"
+        },
+        "valueSource": "opc",
+        "dataType": "Int2",
+        "name": "HOA",
+        "tagType": "AtomicTag",
+        "opcServer": "Ignition OPC UA Server"
+      },
+      {
+        "opcItemPath": {
+          "bindType": "parameter",
+          "binding": "ns\u003d1;s\u003d[TankPLC]Global.Tank{tankNum}.level_PV"
+        },
+        "valueSource": "opc",
+        "dataType": "Int2",
+        "name": "level_PV",
+        "tagType": "AtomicTag",
+        "opcServer": "Ignition OPC UA Server"
+      },
+      {
+        "opcItemPath": {
+          "bindType": "parameter",
+          "binding": "ns\u003d1;s\u003d[TankPLC]Global.Tank{tankNum}.tank_num"
+        },
+        "valueSource": "opc",
+        "dataType": "Int2",
+        "name": "tank_num",
+        "tagType": "AtomicTag",
+        "opcServer": "Ignition OPC UA Server"
+      },
+      {
+        "opcItemPath": {
+          "bindType": "parameter",
+          "binding": "ns\u003d1;s\u003d[TankPLC]Global.Tank{tankNum}.tank_status"
+        },
+        "valueSource": "opc",
+        "dataType": "Int2",
+        "name": "tank_status",
+        "tagType": "AtomicTag",
+        "opcServer": "Ignition OPC UA Server"
+      },
+      {
+        "opcItemPath": {
+          "bindType": "parameter",
+          "binding": "ns\u003d1;s\u003d[TankPLC]Global.Tank{tankNum}.temp_PV"
+        },
+        "valueSource": "opc",
+        "dataType": "Float4",
+        "name": "temp_PV",
+        "tagType": "AtomicTag",
+        "engUnit": "°F",
+        "opcServer": "Ignition OPC UA Server"
+      },
+      {
+        "opcItemPath": {
+          "bindType": "parameter",
+          "binding": "ns\u003d1;s\u003d[TankPLC]Global.Tank{tankNum}.temp_SP"
+        },
+        "valueSource": "opc",
+        "dataType": "Float4",
+        "name": "temp_SP",
+        "tagType": "AtomicTag",
+        "opcServer": "Ignition OPC UA Server"
+      },
+      {
+        "opcItemPath": {
+          "bindType": "parameter",
+          "binding": "ns\u003d1;s\u003d[TankPLC]Global.Tank{tankNum}.temp_delta"
+        },
+        "valueSource": "opc",
+        "dataType": "Float4",
+        "name": "temp_delta",
+        "tagType": "AtomicTag",
+        "opcServer": "Ignition OPC UA Server"
+      },
+      {
+        "opcItemPath": {
+          "bindType": "parameter",
+          "binding": "ns\u003d1;s\u003d[TankPLC]Global.Tank{tankNum}.temp_hi_SP"
+        },
+        "valueSource": "opc",
+        "dataType": "Float4",
+        "name": "temp_hi_SP",
+        "tagType": "AtomicTag",
+        "opcServer": "Ignition OPC UA Server"
+      },
+      {
+        "opcItemPath": {
+          "bindType": "parameter",
+          "binding": "ns\u003d1;s\u003d[TankPLC]Global.Tank{tankNum}.valve_cntl"
+        },
+        "valueSource": "opc",
+        "dataType": "Int2",
+        "name": "valve_cntl",
+        "tagType": "AtomicTag",
+        "opcServer": "Ignition OPC UA Server"
+      },
+      {
+        "opcItemPath": {
+          "bindType": "parameter",
+          "binding": "ns\u003d1;s\u003d[TankPLC]Global.Tank{tankNum}.valve_status"
+        },
+        "valueSource": "opc",
+        "dataType": "Int2",
+        "name": "valve_status",
+        "tagType": "AtomicTag",
+        "opcServer": "Ignition OPC UA Server"
+      }
+    ]
+  }
+]

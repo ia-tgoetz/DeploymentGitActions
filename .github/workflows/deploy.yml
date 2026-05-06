@@ -1,0 +1,62 @@
+name: Deploy Ignition Edge
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    environment: production
+
+    steps:
+      - name: Verify Docker access
+        run: docker info
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Ensure Ignition image is loaded
+        run: bash scripts/load-image.sh
+        env:
+          IGNITION_VERSION: "8.3.6"
+          IMAGE_TAR_PATH: /opt/ignition-images/ignition-8.3.6.tar
+
+      - name: Write MQTT CA certificate
+        run: |
+          mkdir -p certs
+          printf '%s' "$MQTT_CA_CERT" > certs/ca.crt
+          chmod 600 certs/ca.crt
+        env:
+          MQTT_CA_CERT: ${{ secrets.MQTT_CA_CERT }}
+
+      - name: Write runtime .env
+        run: |
+          cat > .env <<EOF
+          IGN_RELEASE=8.3.6
+          IGN_NAME=${IGN_NAME}
+          IGN_MODE=prod
+          IGN_UID=1000
+          IGN_GID=1000
+          TZ=America/Chicago
+          GATEWAY_ADMIN_USERNAME=${GATEWAY_ADMIN_USERNAME}
+          GATEWAY_ADMIN_PASSWORD=${GATEWAY_ADMIN_PASSWORD}
+          EOF
+          chmod 600 .env
+        env:
+          IGN_NAME: ${{ secrets.IGN_NAME }}
+          GATEWAY_ADMIN_USERNAME: ${{ secrets.GATEWAY_ADMIN_USERNAME }}
+          GATEWAY_ADMIN_PASSWORD: ${{ secrets.GATEWAY_ADMIN_PASSWORD }}
+
+      - name: Restart Ignition Edge
+        run: |
+          docker compose down --timeout 60
+          docker compose up -d
+
+      - name: Wait for gateway to be healthy
+        run: bash scripts/health-check.sh
+
+      - name: Clean up secrets
+        if: always()
+        run: rm -f .env certs/ca.crt

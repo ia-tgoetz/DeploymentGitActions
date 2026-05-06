@@ -1,0 +1,7 @@
+{
+  "title": "test",
+  "description": "mode for test system",
+  "enabled": true,
+  "inheritable": true,
+  "parent": "core"
+}

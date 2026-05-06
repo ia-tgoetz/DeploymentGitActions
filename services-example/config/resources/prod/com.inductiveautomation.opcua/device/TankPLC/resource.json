@@ -1,0 +1,19 @@
+{
+  "scope": "A",
+  "description": "Allen-Bradley CompactLogix",
+  "version": 1,
+  "restricted": false,
+  "overridable": true,
+  "files": [
+    "config.json"
+  ],
+  "attributes": {
+    "lastModification": {
+      "actor": "admin",
+      "timestamp": "2026-04-07T10:10:26Z"
+    },
+    "uuid": "96f8ebf2-cb60-4edd-84a2-55c4eec300c8",
+    "lastModificationSignature": "b0333976cb7fdcbc0aafa15282492cafe42f6c7b7ea40cac39e953faa9555dfc",
+    "enabled": true
+  }
+}

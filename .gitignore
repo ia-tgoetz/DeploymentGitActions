@@ -1,0 +1,16 @@
+# Claude Code internals
+.claude/
+
+# Runtime secrets written by deploy.yml — never commit
+.env
+certs/*.crt
+certs/*.key
+certs/*.pem
+
+# Pre-staged Docker image tars live on the IPC, not in Git
+*.tar
+*.tar.gz
+
+# OS artifacts
+.DS_Store
+Thumbs.db

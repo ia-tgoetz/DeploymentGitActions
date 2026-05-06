@@ -1,0 +1,56 @@
+services:
+  ignition-edge:
+    image: inductiveautomation/ignition:${IGN_RELEASE:-8.3.6}
+    user: 0:0
+    container_name: ${IGN_NAME:-ignition-edge}
+    restart: unless-stopped
+    ports:
+      - "${IGN_PORT:-8088}:8088"
+      - "${IGN_HTTPS_PORT:-8043}:8043"
+      - "${IGN_GAN_PORT:-8060}:8060"
+    environment:
+      IGNITION_UID: ${IGN_UID:-1000}
+      IGNITION_GID: ${IGN_GID:-1000}
+      ACCEPT_IGNITION_EULA: "Y"
+      GATEWAY_ADMIN_USERNAME: ${GATEWAY_ADMIN_USERNAME:?GATEWAY_ADMIN_USERNAME is required}
+      GATEWAY_ADMIN_PASSWORD: ${GATEWAY_ADMIN_PASSWORD:?GATEWAY_ADMIN_PASSWORD is required}
+      IGNITION_EDITION: edge
+      TZ: ${TZ:-America/Chicago}
+    command: >
+      -n ${IGN_NAME:-ignition-edge}
+      -h 8088
+      -s 8043
+      --
+      -Dignition.config.mode=${IGN_MODE:-prod}
+    volumes:
+      - ignition-data:/usr/local/bin/ignition/data
+      - ignition-resources:/usr/local/bin/ignition/data/config/resources
+      - ignition-projects:/usr/local/bin/ignition/data/projects
+      - ./certs:/usr/local/bin/ignition/data/certificates/mqtt:ro
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8088/StatusPing"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 120s
+    networks:
+      - ignition-net
+
+networks:
+  ignition-net:
+    driver: bridge
+
+volumes:
+  ignition-data:
+  ignition-resources:
+    driver: local
+    driver_opts:
+      type: none
+      device: services/config/resources
+      o: bind
+  ignition-projects:
+    driver: local
+    driver_opts:
+      type: none
+      device: services/projects
+      o: bind

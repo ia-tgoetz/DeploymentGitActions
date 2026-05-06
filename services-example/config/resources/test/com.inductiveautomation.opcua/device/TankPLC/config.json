@@ -1,0 +1,20 @@
+{
+  "profile": {
+    "browsePath": "",
+    "type": "CompactLogix"
+  },
+  "settings": {
+    "advanced": {
+      "concurrentRequests": 2,
+      "disableAutomaticBrowse": false,
+      "showStringArrays": false,
+      "statusPollRate": 1000
+    },
+    "connectivity": {
+      "hostname": "10.20.4.55",
+      "localAddress": "",
+      "path": "",
+      "timeout": 2000
+    }
+  }
+}
