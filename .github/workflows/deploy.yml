@@ -9,6 +9,9 @@ jobs:
   deploy:
     runs-on: self-hosted
     environment: production
+    permissions:
+      contents: read
+      packages: read
 
     steps:
       - name: Verify Docker access
@@ -17,10 +20,18 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Ensure Ignition image is loaded
         run: bash scripts/load-image.sh
         env:
-          IGNITION_VERSION: "8.3.6"
+          IGN_RELEASE: "8.3.6"
+          IGNITION_IMAGE: ghcr.io/${{ github.repository_owner }}/ignition:8.3.6
           IMAGE_TAR_PATH: /opt/ignition-images/ignition-8.3.6.tar
 
       - name: Write MQTT CA certificate
@@ -35,6 +46,7 @@ jobs:
         run: |
           cat > .env <<EOF
           IGN_RELEASE=8.3.6
+          IGNITION_IMAGE=ghcr.io/${{ github.repository_owner }}/ignition:8.3.6
           IGN_NAME=${IGN_NAME}
           IGN_MODE=prod
           IGN_UID=1000
