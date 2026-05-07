@@ -16,10 +16,10 @@ services:
       GATEWAY_ADMIN_PASSWORD: ${GATEWAY_ADMIN_PASSWORD:?GATEWAY_ADMIN_PASSWORD is required}
       IGNITION_EDITION: edge
       TZ: ${TZ:-America/New_York}
-      # Pre-accept third-party module install on first boot (matched substring)
-      GATEWAY_MODULES_ACCEPTED: ${GATEWAY_MODULES_ACCEPTED:-MQTT Transmission}
-      ACCEPT_MODULE_LICENSES: ${ACCEPT_MODULE_LICENSES:-MQTT Transmission}
-      ACCEPT_MODULE_CERTS: ${ACCEPT_MODULE_CERTS:-MQTT Transmission}
+      # Pre-accept third-party module install on first boot (module ID match)
+      GATEWAY_MODULES_ACCEPTED: ${GATEWAY_MODULES_ACCEPTED:-com.cirruslink.mqtt.transmission.gateway}
+      ACCEPT_MODULE_LICENSES: ${ACCEPT_MODULE_LICENSES:-com.cirruslink.mqtt.transmission.gateway}
+      ACCEPT_MODULE_CERTS: ${ACCEPT_MODULE_CERTS:-com.cirruslink.mqtt.transmission.gateway}
     command: >
       -n ${IGN_NAME:-ignition-edge}
       -h 8088
@@ -32,7 +32,7 @@ services:
       - ignition-data:/usr/local/bin/ignition/data
       - ignition-resources:/usr/local/bin/ignition/data/config/resources
       - ignition-projects:/usr/local/bin/ignition/data/projects
-      - ./services/modules:/usr/local/bin/ignition/external-modules:ro
+      - ignition-modules:/usr/local/bin/ignition/external-modules
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:8088/StatusPing"]
       interval: 30s
@@ -59,4 +59,10 @@ volumes:
     driver_opts:
       type: none
       device: services/projects
+      o: bind
+  ignition-modules:
+    driver: local
+    driver_opts:
+      type: none
+      device: services/modules
       o: bind
