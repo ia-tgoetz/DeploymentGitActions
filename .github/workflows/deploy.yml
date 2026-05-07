@@ -46,6 +46,9 @@ jobs:
           TZ=America/Chicago
           GATEWAY_ADMIN_USERNAME=${GATEWAY_ADMIN_USERNAME}
           GATEWAY_ADMIN_PASSWORD=${GATEWAY_ADMIN_PASSWORD}
+          GATEWAY_MODULES_ACCEPTED=MQTT Transmission
+          ACCEPT_MODULE_LICENSES=MQTT Transmission
+          ACCEPT_MODULE_CERTS=MQTT Transmission
           EOF
           chmod 600 .env
         env:

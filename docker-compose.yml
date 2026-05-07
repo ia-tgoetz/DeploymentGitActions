@@ -16,16 +16,23 @@ services:
       GATEWAY_ADMIN_PASSWORD: ${GATEWAY_ADMIN_PASSWORD:?GATEWAY_ADMIN_PASSWORD is required}
       IGNITION_EDITION: edge
       TZ: ${TZ:-America/New_York}
+      # Pre-accept third-party module install on first boot (matched substring)
+      GATEWAY_MODULES_ACCEPTED: ${GATEWAY_MODULES_ACCEPTED:-MQTT Transmission}
+      ACCEPT_MODULE_LICENSES: ${ACCEPT_MODULE_LICENSES:-MQTT Transmission}
+      ACCEPT_MODULE_CERTS: ${ACCEPT_MODULE_CERTS:-MQTT Transmission}
     command: >
       -n ${IGN_NAME:-ignition-edge}
       -h 8088
       -s 8043
       --
       -Dignition.config.mode=${IGN_MODE:-prod}
+      -Dignition.modules.install.unattended=true
+      -Dignition.gateway.externalModulesFolder=/usr/local/bin/ignition/external-modules
     volumes:
       - ignition-data:/usr/local/bin/ignition/data
       - ignition-resources:/usr/local/bin/ignition/data/config/resources
       - ignition-projects:/usr/local/bin/ignition/data/projects
+      - ./services/modules:/usr/local/bin/ignition/external-modules:ro
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:8088/StatusPing"]
       interval: 30s

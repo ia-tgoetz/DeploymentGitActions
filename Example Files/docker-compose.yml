@@ -1,0 +1,85 @@
+services:
+  module-dev-ignition:
+    image: inductiveautomation/ignition:${IGN_VERSION:-latest}
+    container_name: ${IGN_CONTAINER:-module-dev-ignition}
+    hostname: ${IGN_HOSTNAME:-module-dev-ignition}
+    pull_policy: always
+    restart: always
+    user: 0:0
+    volumes:
+      - module-dev-ignition-data:/usr/local/bin/ignition/data
+      - module-dev-ignition-data-config-resources:/usr/local/bin/ignition/data/config/resources
+      - module-dev-ignition-projects:/usr/local/bin/ignition/data/projects
+      - ../build:/usr/local/bin/ignition/external-modules
+    labels:
+      - traefik.enable=true
+      - traefik.hostname=${IGN_HOSTNAME:-module-dev-ignition}
+
+    environment:
+      IGNITION_UID: ${IGN_UID:-1004}
+      IGNITION_GID: ${IGN_GID:-1004}
+      ACCEPT_IGNITION_EULA: 'Y'
+      #comment out username and password after intial setup
+      # GATEWAY_ADMIN_USERNAME: ${IGN_USERNAME:-admin}
+      # GATEWAY_ADMIN_PASSWORD: ${IGN_PASSWORD:-password}
+      IGNITION_EDITION: ${IGN_EDITION:-standard}
+      TZ: ${IGN_TZ:-America/New_York}
+      DISABLE_QUICKSTART: ${ING_SKIP_QUICKSTART:-true}
+      GATEWAY_MODULES_ACCEPTED: ${IGN_DEV_MODULE:-com.wargoetz.reactflow}
+      ACCEPT_MODULE_LICENSES: ${IGN_DEV_MODULE:-com.wargoetz.reactflow}
+      ACCEPT_MODULE_CERTS: ${IGN_DEV_MODULE:-com.wargoetz.reactflow}
+
+    command: >
+      -n "${IGN_GATEWAY_NAME:-module-dev-ignition}"
+      -h 80
+      -s 443
+      -a "${IGN_HOSTNAME:-module-dev-ignition}"
+      -m 8192
+      --
+      -Dignition.config.mode=${IGN_MODE:-dev}
+      -Dignition.allowunsignedmodules=true
+      -Dignition.modules.install.unattended=true
+      -Dignition.modules.install.trust-unknown-certificates=true
+      -Dignition.gateway.externalModulesFolder=/usr/local/bin/ignition/external-modules
+      
+    networks:
+      - devNetwork
+
+  pgModDev:
+    image: postgres
+    hostname: ${POSTG_HOSTNAME:-postgres}
+    container_name: ${POSTG_CONTAINER:-ignition-demo}
+    volumes:
+      - pgModDev:/var/lib/postgresql/data
+    labels:
+      - traefik.enable=true
+      - traefik.hostname=${POSTG_HOSTNAME:-postgres}
+    environment:
+      POSTGRES_DB: ${POSTG_DB:-postgres}
+      POSTGRES_USER: ${POSTG_USER:-ignition}
+      POSTGRES_PASSWORD: ${POSTG_PASSWORD:-ignition}
+      TZ: ${IGN_TZ:-America/New_York}
+    networks:
+      - devNetwork
+
+networks:
+  devNetwork:
+    external: true
+    name: proxy
+    driver: bridge
+volumes:
+  module-dev-ignition-data:
+  module-dev-ignition-data-config-resources:
+    driver: local
+    driver_opts:
+      type: none
+      device: gateway-data/config/resources
+      o: bind
+  module-dev-ignition-projects:
+    driver: local
+    driver_opts:
+      type: none
+      device: gateway-data/projects
+      o: bind
+  pgModDev:
+

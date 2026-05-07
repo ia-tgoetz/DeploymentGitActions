@@ -24,12 +24,15 @@ Automated deployment and configuration sync for Inductive Automation's Ignition 
 │   └── central-gateway.env         # GAN target details (per site, committed)
 ├── services/
 │   ├── config/resources/           # Ignition VCS config (file-based gateway config)
-│   └── projects/                   # Ignition projects
+│   ├── projects/                   # Ignition projects
+│   └── modules/                    # Third-party .modl files (gitignored, fetched per IPC)
 ├── run-mirror.ps1                  # Wrapper: loads .env then runs mirror (Windows)
 ├── run-mirror.sh                   # Wrapper: loads .env then runs mirror (Linux/macOS)
 └── scripts/
     ├── mirror-to-ghcr.ps1          # One-time: mirror image into GHCR (Windows)
     ├── mirror-to-ghcr.sh           # One-time: mirror image into GHCR (Linux/macOS)
+    ├── fetch-modules.ps1           # One-time: download .modl files (Windows)
+    ├── fetch-modules.sh            # One-time: download .modl files (Linux/macOS)
     ├── load-image.sh               # IPC: ensure image is available (GHCR or tar)
     ├── health-check.sh             # IPC: poll /StatusPing until RUNNING
     └── configure-gan.sh            # IPC: one-time GAN connection setup
@@ -226,7 +229,23 @@ You should see `Active: active (running)`. Confirm in GitHub: `Settings → Acti
 
 > **`./svc.sh: command not found`** means you skipped step (b). `svc.sh` only exists after `config.sh` has registered the runner.
 
-### 3.3 (Optional) Pre-stage the image tar for air-gapped fallback
+### 3.3 Fetch third-party modules
+
+Ignition Edge auto-installs any `.modl` file present in `services/modules/` on first boot, using the env vars in `.env` to pre-accept licenses and certs. The `.modl` binaries are gitignored — they live alongside the repo on each IPC, not inside it.
+
+Currently configured: **Cirrus Link MQTT Transmission 5.0.3**.
+
+```bash
+# On the IPC (or workstation):
+cd ~/path/to/repo
+bash scripts/fetch-modules.sh   # or .\scripts\fetch-modules.ps1 on Windows
+```
+
+This downloads from `files.inductiveautomation.com` once. The resulting `services/modules/MQTT-Transmission-signed.modl` survives `git pull` and `docker compose down` (it's gitignored and a bind mount, not a volume).
+
+To add another module: edit the `MODULES` list in `scripts/fetch-modules.sh` / `.ps1`, then add the module's display name to `GATEWAY_MODULES_ACCEPTED`, `ACCEPT_MODULE_LICENSES`, and `ACCEPT_MODULE_CERTS` in `.env.example` and the workflow's `.env` write step.
+
+### 3.4 (Optional) Pre-stage the image tar for air-gapped fallback
 
 If the IPC may temporarily lose internet, pre-stage a tar so the deploy still works:
 
