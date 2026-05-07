@@ -27,6 +27,8 @@ services:
       -n ignition-central
       -h 8088
       -s 8043
+      --
+      -Dignition.license.leased-activation-terminate-sessions-on-shutdown=true
     volumes:
       - ignition-central-data:/usr/local/bin/ignition/data
     healthcheck:

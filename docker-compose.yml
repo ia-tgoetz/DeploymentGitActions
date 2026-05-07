@@ -28,6 +28,7 @@ services:
       -Dignition.config.mode=${IGN_MODE:-prod}
       -Dignition.modules.install.unattended=true
       -Dignition.gateway.externalModulesFolder=/usr/local/bin/ignition/external-modules
+      -Dignition.license.leased-activation-terminate-sessions-on-shutdown=true
     volumes:
       - ignition-data:/usr/local/bin/ignition/data
       - ignition-resources:/usr/local/bin/ignition/data/config/resources
