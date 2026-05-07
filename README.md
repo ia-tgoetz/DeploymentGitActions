@@ -180,25 +180,51 @@ docker run --rm hello-world
 
 In the GitHub repo: `Settings → Actions → Runners → New self-hosted runner → Linux x64`
 
-GitHub will display a one-time token and the exact commands. Run them on the IPC. They look like:
+GitHub will display a one-time token (expires in ~1 hour — generate a fresh one if it's stale) and the exact commands. Run them on the IPC, one block at a time:
+
+#### a. Download and extract
 
 ```bash
 mkdir -p ~/actions-runner && cd ~/actions-runner
 curl -o actions-runner-linux-x64-<version>.tar.gz -L \
   https://github.com/actions/runner/releases/download/v<version>/actions-runner-linux-x64-<version>.tar.gz
 tar xzf actions-runner-linux-x64-<version>.tar.gz
+```
+
+> **Heads-up on the optional hash check.** GitHub's snippet includes a `shasum` line followed by `# Extract the installer`. If you paste it as one line, the `#` gets eaten as an argument and shasum errors with `Unknown option: #`. The error is harmless — `tar xzf` on the next line still runs. Either ignore it or put the comment on its own line.
+
+#### b. Register with GitHub
+
+This step talks to GitHub using your one-time token, registers the runner, and **generates `svc.sh`**. You won't see a `svc.sh` file in the directory until this step succeeds.
+
+```bash
 ./config.sh \
   --url https://github.com/ia-tgoetz/DeploymentGitActions \
   --token <one-time-token>
 ```
 
-Install as a systemd service so it survives reboots:
+You'll be prompted four times — defaults are fine for all:
+
+| Prompt | Answer |
+|---|---|
+| Runner group | press Enter (default `Default`) |
+| Runner name | something descriptive, e.g. `ipc-test`, `edge-dallas-01` |
+| Additional labels | press Enter (default `self-hosted,Linux,X64`) |
+| Work folder | press Enter (default `_work`) |
+
+#### c. Install as a systemd service
+
+So the runner survives reboots:
 
 ```bash
 sudo ./svc.sh install
 sudo ./svc.sh start
 sudo ./svc.sh status
 ```
+
+You should see `Active: active (running)`. Confirm in GitHub: `Settings → Actions → Runners` — the runner should show as **Idle**.
+
+> **`./svc.sh: command not found`** means you skipped step (b). `svc.sh` only exists after `config.sh` has registered the runner.
 
 ### 3.3 (Optional) Pre-stage the image tar for air-gapped fallback
 
