@@ -1,0 +1,20 @@
+{
+  "scope": "A",
+  "version": 1,
+  "restricted": false,
+  "overridable": true,
+  "files": [
+    "id_card_refresh.png"
+  ],
+  "attributes": {
+    "width": 32,
+    "format": "PNG",
+    "lastModification": {
+      "actor": "import",
+      "timestamp": "2026-04-14T00:04:14Z"
+    },
+    "size": 1058,
+    "lastModificationSignature": "e1229b55427c8c3d416bc73196312be1bb70dcf6888f5fb35f56d8484bf0cf0d",
+    "height": 32
+  }
+}

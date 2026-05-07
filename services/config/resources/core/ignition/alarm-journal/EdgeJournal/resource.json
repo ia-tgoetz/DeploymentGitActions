@@ -1,0 +1,13 @@
+{
+  "scope": "A",
+  "description": "Edge Alarm Journal",
+  "version": 1,
+  "restricted": false,
+  "overridable": false,
+  "files": [
+    "config.json"
+  ],
+  "attributes": {
+    "uuid": "59cd53d1-ca50-4436-9ec5-7f5b39aa831d"
+  }
+}

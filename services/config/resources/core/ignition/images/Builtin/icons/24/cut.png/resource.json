@@ -1,0 +1,20 @@
+{
+  "scope": "A",
+  "version": 1,
+  "restricted": false,
+  "overridable": true,
+  "files": [
+    "cut.png"
+  ],
+  "attributes": {
+    "width": 24,
+    "format": "PNG",
+    "lastModification": {
+      "actor": "import",
+      "timestamp": "2026-04-14T00:04:14Z"
+    },
+    "size": 1003,
+    "lastModificationSignature": "76d7f4f80579421abd1eeaf7b1d209db5d97ab9bc6bce12470675a5505a8ff5f",
+    "height": 24
+  }
+}

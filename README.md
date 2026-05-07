@@ -5,10 +5,11 @@ Automated deployment and configuration sync for Inductive Automation's Ignition 
 ## How it works
 
 1. **Image source:** the Ignition image is mirrored from Docker Hub into your private GitHub Container Registry once. IPCs only ever pull from `ghcr.io/<owner>/ignition:<version>`, never from public registries.
-2. **Runner:** each IPC runs a self-hosted GitHub Actions runner registered against this repo.
+2. **Runner:** each IPC runs a self-hosted GitHub Actions runner registered against this repo (provisioned in one shot via `scripts/provision-runner.sh`).
 3. **Trigger:** any push to `main` triggers `.github/workflows/deploy.yml`.
-4. **Sync:** the runner pulls the latest repo, writes a runtime `.env` from Secrets, then `docker compose down && up -d` with a health-check wait.
+4. **Sync:** the runner pulls the latest repo, writes a runtime `.env` from Secrets + the IPC hostname, then `docker compose down && up -d` with a health-check wait.
 5. **Config-as-code:** Ignition projects and the file-based VCS config live in `services/projects/` and `services/config/resources/`, bind-mounted into the container.
+6. **Gateway naming:** each IPC's Ignition gateway name automatically inherits the host's `hostname`, so the central GW's GAN view shows fleet members by IPC identity. Override with the `IGN_NAME` repo Secret if you need a custom name.
 
 ---
 
@@ -33,6 +34,7 @@ Automated deployment and configuration sync for Inductive Automation's Ignition 
     ├── mirror-to-ghcr.sh           # One-time: mirror image into GHCR (Linux/macOS)
     ├── fetch-modules.ps1           # One-time: download .modl files (Windows)
     ├── fetch-modules.sh            # One-time: download .modl files (Linux/macOS)
+    ├── provision-runner.sh         # One-shot: full IPC provisioning (Docker, UFW, runner)
     ├── load-image.sh               # IPC: ensure image is available (GHCR or tar)
     ├── health-check.sh             # IPC: poll /StatusPing until RUNNING
     └── configure-gan.sh            # IPC: one-time GAN connection setup
@@ -146,7 +148,7 @@ Then under **Manage Actions access**, add this repository so the workflow's `GIT
 |---|---|
 | `GATEWAY_ADMIN_USERNAME` | Initial admin username for the gateway |
 | `GATEWAY_ADMIN_PASSWORD` | Initial admin password (use a strong one) |
-| `IGN_NAME` | Gateway display name (e.g. `edge-site-dallas-01`) |
+| `IGN_NAME` *(optional)* | Override the gateway display name. If unset, the IPC's hostname is used. |
 
 `GITHUB_TOKEN` is auto-provided by GitHub Actions and is what the workflow uses to authenticate to GHCR — no extra secret needed.
 
@@ -166,68 +168,51 @@ Edit `config/central-gateway.env` and fill in the central gateway details for th
 
 ## Phase 3 — Provision the IPC
 
-These steps run on the Linux IPC itself.
+A single script handles everything: Docker install, firewall ports, dedicated service user, runner registration, and systemd service. Idempotent — safe to re-run.
 
-### 3.1 Install Docker
+### 3.1 (Optional) Set a meaningful hostname
 
-```bash
-sudo apt update && sudo apt upgrade -y
-sudo apt install -y curl git
-curl -fsSL https://get.docker.com | sudo sh
-sudo usermod -aG docker $USER
-newgrp docker
-docker run --rm hello-world
-```
-
-### 3.2 Register the GitHub Actions runner
-
-In the GitHub repo: `Settings → Actions → Runners → New self-hosted runner → Linux x64`
-
-GitHub will display a one-time token (expires in ~1 hour — generate a fresh one if it's stale) and the exact commands. Run them on the IPC, one block at a time:
-
-#### a. Download and extract
+The Ignition gateway name is derived automatically from the IPC's hostname during deploy, so set something descriptive before provisioning:
 
 ```bash
-mkdir -p ~/actions-runner && cd ~/actions-runner
-curl -o actions-runner-linux-x64-<version>.tar.gz -L \
-  https://github.com/actions/runner/releases/download/v<version>/actions-runner-linux-x64-<version>.tar.gz
-tar xzf actions-runner-linux-x64-<version>.tar.gz
+sudo hostnamectl set-hostname edge-site-dallas-01
+exec bash   # reload the shell so $(hostname) reflects the change
 ```
 
-> **Heads-up on the optional hash check.** GitHub's snippet includes a `shasum` line followed by `# Extract the installer`. If you paste it as one line, the `#` gets eaten as an argument and shasum errors with `Unknown option: #`. The error is harmless — `tar xzf` on the next line still runs. Either ignore it or put the comment on its own line.
+### 3.2 Get a one-time runner token
 
-#### b. Register with GitHub
+`Settings → Actions → Runners → New self-hosted runner` → copy the token (expires in ~1 hour).
 
-This step talks to GitHub using your one-time token, registers the runner, and **generates `svc.sh`**. You won't see a `svc.sh` file in the directory until this step succeeds.
+### 3.3 Run the provisioning script
+
+Clone the repo, then:
 
 ```bash
-./config.sh \
-  --url https://github.com/ia-tgoetz/DeploymentGitActions \
-  --token <one-time-token>
+git clone https://github.com/ia-tgoetz/DeploymentGitActions.git
+cd DeploymentGitActions
+sudo bash scripts/provision-runner.sh <one-time-token>
 ```
 
-You'll be prompted four times — defaults are fine for all:
+That's it. The script:
 
-| Prompt | Answer |
+| Step | What it does |
 |---|---|
-| Runner group | press Enter (default `Default`) |
-| Runner name | something descriptive, e.g. `ipc-test`, `edge-dallas-01` |
-| Additional labels | press Enter (default `self-hosted,Linux,X64`) |
-| Work folder | press Enter (default `_work`) |
+| 1 | Installs `curl`, `git`, `jq`, `ufw`, `ca-certificates` |
+| 2 | Installs Docker via `get.docker.com` (skips if already present) |
+| 3 | Creates the `github-runner` system user (no login shell, in `docker` group) |
+| 4 | Configures UFW: allows `OpenSSH`, then opens Ignition ports `8088`, `8043`, `8060` |
+| 5 | Downloads the latest GitHub Actions runner into `/opt/actions-runner` |
+| 6 | Registers it with GitHub using your token, name = hostname, labels = `self-hosted,Linux,X64,ipc` |
+| 7 | Installs and starts the systemd service running as `github-runner` |
+| 8 | Pre-creates `/opt/ignition-images/` for the optional tar fallback |
 
-#### c. Install as a systemd service
+After it completes, verify in GitHub: `Settings → Actions → Runners` — the runner should appear as **Idle** with the IPC's hostname.
 
-So the runner survives reboots:
+To override the runner name (which becomes the gateway name) at provisioning time:
 
 ```bash
-sudo ./svc.sh install
-sudo ./svc.sh start
-sudo ./svc.sh status
+sudo bash scripts/provision-runner.sh <token> custom-runner-name
 ```
-
-You should see `Active: active (running)`. Confirm in GitHub: `Settings → Actions → Runners` — the runner should show as **Idle**.
-
-> **`./svc.sh: command not found`** means you skipped step (b). `svc.sh` only exists after `config.sh` has registered the runner.
 
 ### 3.3 Fetch third-party modules
 

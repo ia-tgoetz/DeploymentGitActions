@@ -1,0 +1,7 @@
+Time Interval, Browse Path, Value Source, Data Type
+"0","Hourly Flowrate","sine(3000.0, 3500.0, 400.0, true)","Double"
+"0","Average Pressure","sine(4.0, 5.0, 300.0, true)","Double"
+"0","Temperature","random(70.0, 72.0, true)","Double"
+"0","Static Pressure","sine(10.0, 12.0, 300.0, true)","Double"
+"0","Average Temperature","sine(70.0, 73.0, 400.0, true)","Double"
+"0","Differential Pressure","cosine(400.0, 500.0, 300.0, true)","Double"

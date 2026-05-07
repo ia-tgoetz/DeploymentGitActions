@@ -36,6 +36,8 @@ jobs:
 
       - name: Write runtime .env
         run: |
+          # Gateway name derives from the IPC's hostname unless overridden
+          IGN_NAME="${IGN_NAME_OVERRIDE:-$(hostname | tr '[:upper:]' '[:lower:]')}"
           cat > .env <<EOF
           IGN_RELEASE=8.3.6
           IGNITION_IMAGE=ghcr.io/${{ github.repository_owner }}/ignition
@@ -52,7 +54,7 @@ jobs:
           EOF
           chmod 600 .env
         env:
-          IGN_NAME: ${{ secrets.IGN_NAME }}
+          IGN_NAME_OVERRIDE: ${{ secrets.IGN_NAME }}
           GATEWAY_ADMIN_USERNAME: ${{ secrets.GATEWAY_ADMIN_USERNAME }}
           GATEWAY_ADMIN_PASSWORD: ${{ secrets.GATEWAY_ADMIN_PASSWORD }}
 
