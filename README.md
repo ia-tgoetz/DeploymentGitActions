@@ -25,8 +25,11 @@ Automated deployment and configuration sync for Inductive Automation's Ignition 
 ├── services/
 │   ├── config/resources/           # Ignition VCS config (file-based gateway config)
 │   └── projects/                   # Ignition projects
+├── run-mirror.ps1                  # Wrapper: loads .env then runs mirror (Windows)
+├── run-mirror.sh                   # Wrapper: loads .env then runs mirror (Linux/macOS)
 ├── scripts/
-│   ├── mirror-to-ghcr.sh           # One-time: mirror IA's image into your GHCR
+│   ├── mirror-to-ghcr.ps1          # One-time: mirror image into GHCR (Windows)
+│   ├── mirror-to-ghcr.sh           # One-time: mirror image into GHCR (Linux/macOS)
 │   ├── load-image.sh               # IPC: ensure image is available (GHCR or tar)
 │   ├── health-check.sh             # IPC: poll /StatusPing until RUNNING
 │   └── configure-gan.sh            # IPC: one-time GAN connection setup
@@ -36,12 +39,28 @@ Automated deployment and configuration sync for Inductive Automation's Ignition 
 
 ---
 
+## Image variable convention
+
+The compose file splits the image base from the tag:
+
+```yaml
+image: ${IGNITION_IMAGE:-ghcr.io/ia-tgoetz/ignition}:${IGN_RELEASE:-8.3.6}
+```
+
+| Variable | What it holds | Example |
+|---|---|---|
+| `IGNITION_IMAGE` | Registry + repo path (no tag) | `ghcr.io/ia-tgoetz/ignition` |
+| `IGN_RELEASE` | Version tag only | `8.3.6` |
+
+To bump versions you only change `IGN_RELEASE`. To switch registries (e.g. fall back to Docker Hub for local dev) you only change `IGNITION_IMAGE`.
+
+---
+
 ## Prerequisites
 
 - A GitHub repo with **Branch protection on `main`** enabled (the runner has Docker access — protect what executes on it)
 - GHCR enabled on your account/org
 - One Linux IPC (Ubuntu Server 22.04 or 24.04 LTS recommended) with network access to `github.com` and `ghcr.io`
-- Inductive Automation Docker image access (no special credentials required for the public Docker Hub image we mirror)
 
 ---
 
@@ -56,27 +75,63 @@ Go to <https://github.com/settings/tokens/new> and create a classic token with t
 - `read:packages`
 - `repo` (auto-selected)
 
-Save the token somewhere safe.
+Save the token somewhere safe. **Never paste it into chat, commits, or shared docs.**
 
-### 1.2 Mirror the image
+### 1.2 Clone the repo and configure
 
-From any machine with Docker and internet access:
-
-```bash
+```powershell
 git clone https://github.com/ia-tgoetz/DeploymentGitActions.git
 cd DeploymentGitActions
-
-GHCR_OWNER=ia-tgoetz \
-IGN_RELEASE=8.3.6 \
-GHCR_PAT=<your-token> \
-bash scripts/mirror-to-ghcr.sh
+copy .env.example .env
 ```
 
-### 1.3 Make the GHCR package private
+Open `.env` and fill in at minimum:
+```
+GHCR_OWNER=ia-tgoetz
+GHCR_PAT=<your-new-token>
+```
+
+`.env` is gitignored, so the PAT stays local.
+
+### 1.3 Run the mirror
+
+The wrapper scripts at the repo root read `.env`, export each variable, and call the platform-appropriate mirror script.
+
+#### Windows (PowerShell)
+
+```powershell
+.\run-mirror.ps1
+```
+
+#### Linux / macOS / WSL / Git Bash
+
+```bash
+bash run-mirror.sh
+```
+
+If you'd rather not store the PAT in `.env`, you can set the three variables inline and call the mirror script directly:
+
+```powershell
+# PowerShell
+$env:GHCR_OWNER  = "ia-tgoetz"
+$env:IGN_RELEASE = "8.3.6"
+$env:GHCR_PAT    = "<your-token>"
+.\scripts\mirror-to-ghcr.ps1
+```
+
+```bash
+# Bash
+GHCR_OWNER=ia-tgoetz IGN_RELEASE=8.3.6 GHCR_PAT=<your-token> \
+  bash scripts/mirror-to-ghcr.sh
+```
+
+### 1.4 Make the GHCR package private
 
 Default visibility is public. Lock it down:
 
 <https://github.com/users/ia-tgoetz/packages/container/ignition/settings> → **Change visibility** → **Private**
+
+Then under **Manage Actions access**, add this repository so the workflow's `GITHUB_TOKEN` can pull.
 
 ---
 
@@ -99,7 +154,6 @@ Default visibility is public. Lock it down:
 
 `Settings → Branches → Add rule` for `main`:
 - Require pull request before merging
-- Require status checks (once you add any)
 - Restrict who can push
 
 The self-hosted runner executes whatever's in `main` with Docker root on the IPC. Treat `main` like production.
@@ -236,9 +290,10 @@ docker compose -f docker-compose.yml -f docker-compose.test.yml down -v
 
 ### Bumping the Ignition version
 
-1. Mirror the new tag to GHCR: re-run `scripts/mirror-to-ghcr.sh` with the new `IGN_RELEASE`.
-2. Update `IGN_RELEASE` in `.github/workflows/deploy.yml` and `.env.example`.
-3. Commit and push to `main`. Every IPC will roll forward on its next deploy.
+1. Update `IGN_RELEASE` in your local `.env`.
+2. Mirror the new tag to GHCR — re-run `.\run-mirror.ps1` (Windows) or `bash run-mirror.sh` (Linux/macOS).
+3. Update `IGN_RELEASE` in `.github/workflows/deploy.yml` and `.env.example`.
+4. Commit and push to `main`. Every IPC will roll forward on its next deploy.
 
 ### Rolling back
 
@@ -276,6 +331,9 @@ docker exec -it ignition-edge curl -sf http://localhost:8088/StatusPing
 
 **File ownership issues on bind mounts**
 Set `IGN_UID` / `IGN_GID` in `.env` to match the host user that owns `services/`.
+
+**PowerShell complains about `VAR=value` syntax**
+That's bash syntax. On Windows use `$env:VAR = "value"` on its own line, then run the script. See Phase 1.3.
 
 **Need to wipe state and start fresh**
 ```bash

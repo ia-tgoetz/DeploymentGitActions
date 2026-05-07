@@ -7,8 +7,9 @@
 
 set -euo pipefail
 
-IMAGE="${IGNITION_IMAGE:-ghcr.io/ia-tgoetz/ignition:${IGN_RELEASE:-8.3.6}}"
-TAR="${IMAGE_TAR_PATH:-/opt/ignition-images/ignition-${IGN_RELEASE:-8.3.6}.tar}"
+RELEASE="${IGN_RELEASE:-8.3.6}"
+IMAGE="${IGNITION_IMAGE:-ghcr.io/ia-tgoetz/ignition}:${RELEASE}"
+TAR="${IMAGE_TAR_PATH:-/opt/ignition-images/ignition-${RELEASE}.tar}"
 
 if docker image inspect "$IMAGE" &>/dev/null; then
   echo "Image $IMAGE already loaded, skipping."

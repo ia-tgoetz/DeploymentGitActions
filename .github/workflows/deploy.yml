@@ -31,7 +31,7 @@ jobs:
         run: bash scripts/load-image.sh
         env:
           IGN_RELEASE: "8.3.6"
-          IGNITION_IMAGE: ghcr.io/${{ github.repository_owner }}/ignition:8.3.6
+          IGNITION_IMAGE: ghcr.io/${{ github.repository_owner }}/ignition
           IMAGE_TAR_PATH: /opt/ignition-images/ignition-8.3.6.tar
 
       - name: Write MQTT CA certificate
@@ -46,7 +46,7 @@ jobs:
         run: |
           cat > .env <<EOF
           IGN_RELEASE=8.3.6
-          IGNITION_IMAGE=ghcr.io/${{ github.repository_owner }}/ignition:8.3.6
+          IGNITION_IMAGE=ghcr.io/${{ github.repository_owner }}/ignition
           IGN_NAME=${IGN_NAME}
           IGN_MODE=prod
           IGN_UID=1000
