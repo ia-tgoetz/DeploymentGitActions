@@ -26,7 +26,6 @@ services:
       - ignition-data:/usr/local/bin/ignition/data
       - ignition-resources:/usr/local/bin/ignition/data/config/resources
       - ignition-projects:/usr/local/bin/ignition/data/projects
-      - ./certs:/usr/local/bin/ignition/data/certificates/mqtt:ro
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:8088/StatusPing"]
       interval: 30s

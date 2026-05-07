@@ -34,14 +34,6 @@ jobs:
           IGNITION_IMAGE: ghcr.io/${{ github.repository_owner }}/ignition
           IMAGE_TAR_PATH: /opt/ignition-images/ignition-8.3.6.tar
 
-      - name: Write MQTT CA certificate
-        run: |
-          mkdir -p certs
-          printf '%s' "$MQTT_CA_CERT" > certs/ca.crt
-          chmod 600 certs/ca.crt
-        env:
-          MQTT_CA_CERT: ${{ secrets.MQTT_CA_CERT }}
-
       - name: Write runtime .env
         run: |
           cat > .env <<EOF
@@ -71,4 +63,4 @@ jobs:
 
       - name: Clean up secrets
         if: always()
-        run: rm -f .env certs/ca.crt
+        run: rm -f .env

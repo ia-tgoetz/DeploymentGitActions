@@ -7,7 +7,7 @@ Automated deployment and configuration sync for Inductive Automation's Ignition 
 1. **Image source:** the Ignition image is mirrored from Docker Hub into your private GitHub Container Registry once. IPCs only ever pull from `ghcr.io/<owner>/ignition:<version>`, never from public registries.
 2. **Runner:** each IPC runs a self-hosted GitHub Actions runner registered against this repo.
 3. **Trigger:** any push to `main` triggers `.github/workflows/deploy.yml`.
-4. **Sync:** the runner pulls the latest repo, writes the MQTT CA cert from a Secret, writes a runtime `.env`, then `docker compose down && up -d` with a health-check wait.
+4. **Sync:** the runner pulls the latest repo, writes a runtime `.env` from Secrets, then `docker compose down && up -d` with a health-check wait.
 5. **Config-as-code:** Ignition projects and the file-based VCS config live in `services/projects/` and `services/config/resources/`, bind-mounted into the container.
 
 ---
@@ -18,7 +18,7 @@ Automated deployment and configuration sync for Inductive Automation's Ignition 
 .
 ├── .github/workflows/deploy.yml    # CI/CD workflow — runs on every push to main
 ├── docker-compose.yml              # Production: Ignition Edge only
-├── docker-compose.test.yml         # Adds Mosquitto + central GW for local testing
+├── docker-compose.test.yml         # Adds a central GW container for local GAN testing
 ├── .env.example                    # Template — copy to .env per environment
 ├── config/
 │   └── central-gateway.env         # GAN target details (per site, committed)
@@ -27,14 +27,12 @@ Automated deployment and configuration sync for Inductive Automation's Ignition 
 │   └── projects/                   # Ignition projects
 ├── run-mirror.ps1                  # Wrapper: loads .env then runs mirror (Windows)
 ├── run-mirror.sh                   # Wrapper: loads .env then runs mirror (Linux/macOS)
-├── scripts/
-│   ├── mirror-to-ghcr.ps1          # One-time: mirror image into GHCR (Windows)
-│   ├── mirror-to-ghcr.sh           # One-time: mirror image into GHCR (Linux/macOS)
-│   ├── load-image.sh               # IPC: ensure image is available (GHCR or tar)
-│   ├── health-check.sh             # IPC: poll /StatusPing until RUNNING
-│   └── configure-gan.sh            # IPC: one-time GAN connection setup
-├── test/mosquitto/config/          # Mosquitto config for the local test stack
-└── certs/                          # MQTT CA cert (gitignored, written by deploy.yml)
+└── scripts/
+    ├── mirror-to-ghcr.ps1          # One-time: mirror image into GHCR (Windows)
+    ├── mirror-to-ghcr.sh           # One-time: mirror image into GHCR (Linux/macOS)
+    ├── load-image.sh               # IPC: ensure image is available (GHCR or tar)
+    ├── health-check.sh             # IPC: poll /StatusPing until RUNNING
+    └── configure-gan.sh            # IPC: one-time GAN connection setup
 ```
 
 ---
@@ -146,7 +144,6 @@ Then under **Manage Actions access**, add this repository so the workflow's `GIT
 | `GATEWAY_ADMIN_USERNAME` | Initial admin username for the gateway |
 | `GATEWAY_ADMIN_PASSWORD` | Initial admin password (use a strong one) |
 | `IGN_NAME` | Gateway display name (e.g. `edge-site-dallas-01`) |
-| `MQTT_CA_CERT` | Full PEM contents of the Chariot CA cert (paste `-----BEGIN CERTIFICATE-----` through `-----END CERTIFICATE-----`) |
 
 `GITHUB_TOKEN` is auto-provided by GitHub Actions and is what the workflow uses to authenticate to GHCR — no extra secret needed.
 
@@ -228,11 +225,10 @@ Push any change to `main` (or use **Actions → Deploy Ignition Edge → Run wor
 1. Verify Docker access
 2. Log in to GHCR using the workflow's `GITHUB_TOKEN`
 3. Pull the image (or load from tar fallback)
-4. Write `certs/ca.crt` from the `MQTT_CA_CERT` Secret
-5. Write a runtime `.env` from Secrets + repo defaults
-6. `docker compose down --timeout 60 && up -d`
-7. Poll `http://localhost:8088/StatusPing` until it returns `RUNNING`
-8. Clean up the runtime `.env` and cert file
+4. Write a runtime `.env` from Secrets + repo defaults
+5. `docker compose down --timeout 60 && up -d`
+6. Poll `http://localhost:8088/StatusPing` until it returns `RUNNING`
+7. Clean up the runtime `.env`
 
 Open `http://<ipc-ip>:8088` in a browser to verify. Log in with the admin credentials from the Secrets.
 
@@ -262,7 +258,7 @@ Verify in the gateway UI: `http://<ipc-ip>:8088/web/config/networking.ganconfig`
 
 ## Local test environment
 
-A full local stack (Edge + Mosquitto + a central gateway container) is in `docker-compose.test.yml`:
+For exercising GAN end-to-end locally, `docker-compose.test.yml` adds a second Ignition container that acts as the central gateway:
 
 ```bash
 cp .env.example .env
@@ -275,8 +271,6 @@ docker compose -f docker-compose.yml -f docker-compose.test.yml up -d
 |---|---|
 | Ignition Edge | <http://localhost:8088> |
 | Central Ignition GW | <http://localhost:9088> |
-| Mosquitto plaintext | `mqtt://localhost:1883` |
-| Mosquitto TLS | `mqtts://localhost:8883` |
 
 Tear down:
 
@@ -303,11 +297,6 @@ Re-tag a known-good version in GHCR or revert the `main` branch commit that bump
 
 1. Edit `config/central-gateway.env`, commit, push.
 2. SSH to each affected IPC and re-run `bash scripts/configure-gan.sh`.
-
-### Updating MQTT cert
-
-1. Update the `MQTT_CA_CERT` Secret in GitHub.
-2. Push any commit to `main` to trigger a redeploy. The cert is rewritten at every deploy.
 
 ---
 
