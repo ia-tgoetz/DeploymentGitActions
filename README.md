@@ -12,6 +12,7 @@ Automated deployment and configuration sync for Inductive Automation's Ignition 
 6. **Gateway naming:** each IPC's Ignition gateway name automatically inherits the host's `hostname`, so the central GW's GAN view shows fleet members by IPC identity. Override with the `IGN_NAME` repo Secret if you need a custom name.
 7. **Transmitter identity:** at deploy time, `scripts/configure-transmitter.sh` rewrites `edgeNodeId` in every Cirrus Link transmitter config under `services/config/resources/.../transmitter/<name>/config.json` to match the gateway name. Each IPC publishes to MQTT under its own edge-node ID without per-site config sprawl.
 8. **Fleet identity (optional):** a single self-signed cert + PKCS12 keystore baked into the image gives every Edge in the fleet the same TLS identity to the Hub. The Hub admin approves one cert; the whole fleet is trusted. Without this, Ignition auto-generates a unique metro keystore per IPC and the Hub admin has to approve each one individually. See Phase 1.0.
+9. **Fleet fan-out:** `config/fleet.txt` lists every IPC by hostname. The deploy workflow uses a matrix strategy that spawns one job per entry, each pinned to that IPC's runner via a hostname-specific label. A push to `main` deploys to **every** IPC in parallel; `fail-fast: false` keeps a bad IPC from cancelling the rest. Manual dispatch with an `ipc` input targets one IPC for canary deploys.
 
 ---
 
@@ -31,7 +32,8 @@ Automated deployment and configuration sync for Inductive Automation's Ignition 
 │       ├── fleet-cert.crt          # Public fleet identity cert — committed; Hub admin imports once to trust the whole fleet
 │       └── .gitignore              # Excludes .modl binaries and fleet-keystore.p12 (private key)
 ├── config/
-│   └── central-gateway.env         # GAN target details (per site, committed)
+│   ├── central-gateway.env         # GAN target details (per site, committed)
+│   └── fleet.txt                   # IPC roster — one hostname per line; deploy workflow fans out to each
 ├── services/
 │   ├── config/resources/           # Ignition VCS config (file-based gateway config)
 │   ├── projects/                   # Ignition projects
@@ -232,7 +234,6 @@ Without step 3, the deploy workflow's auto-injected `GITHUB_TOKEN` will 403 when
 |---|---|
 | `GATEWAY_ADMIN_USERNAME` | Initial admin username for the gateway |
 | `GATEWAY_ADMIN_PASSWORD` | Initial admin password (use a strong one) |
-| `IGN_NAME` *(optional)* | Override the gateway display name. If unset, the IPC's hostname is used. |
 | `FLEET_KEYSTORE_BASE64` *(optional)* | Base64-encoded `fleet-keystore.p12` from Phase 1.0. Only needed for the CI-build path. If unset, CI builds without a fleet keystore and Edges fall back to per-IPC auto-generated metro keystores. |
 | `IGN_FLEET_KEYSTORE_PASSWORD` *(optional)* | Override the fleet keystore password if you generated the `.p12` with something other than the default `changeit`. |
 | `ANTHROPIC_API_KEY` *(optional)* | Powers the auto-troubleshooting agent (`scripts/deploy_agent.py`). Without it, deploy failures are surfaced as workflow errors only — no auto-investigation. Get from <https://console.anthropic.com/settings/keys>. |
@@ -280,20 +281,35 @@ That's it. The script:
 | 3 | Creates the `github-runner` system user (no login shell, in `docker` group) |
 | 4 | Configures UFW: allows `OpenSSH`, then opens Ignition ports `8088`, `8043`, `8060` |
 | 5 | Downloads the latest GitHub Actions runner into `/opt/actions-runner` |
-| 6 | Registers it with GitHub using your token, name = hostname, labels = `self-hosted,Linux,X64,ipc` |
+| 6 | Registers it with GitHub using your token, name = hostname, labels = `self-hosted,Linux,X64,ipc,<hostname>` (the hostname label is what deploy.yml's matrix targets) |
 | 7 | Installs and starts the systemd service running as `github-runner` |
 | 8 | Pre-creates `/opt/ignition-images/` for the optional tar fallback |
 
-After it completes, verify in GitHub: `Settings → Actions → Runners` — the runner should appear as **Idle** with the IPC's existing hostname.
+After it completes, verify in GitHub: `Settings → Actions → Runners` — the runner should appear as **Idle** with the IPC's existing hostname, and its label list should include that hostname.
 
-> **The script does not change the IPC's hostname.** It reads `$(hostname)` and reuses it as both the runner name and (at deploy time) the Ignition gateway name. Set the hostname through your normal IPC provisioning before running this script (Proxmox template, cloud-init, `hostnamectl`, whatever you prefer).
+> **The script does not change the IPC's hostname.** It reads `$(hostname)` and reuses it as the runner name, the runner's targeting label, and (at deploy time) the Ignition gateway name. Set the hostname through your normal IPC provisioning before running this script (Proxmox template, cloud-init, `hostnamectl`, whatever you prefer).
 >
 > To override the runner name without changing the host's hostname:
 > ```bash
 > sudo bash scripts/provision-runner.sh <token> custom-runner-name
 > ```
+> If you do this, also use `custom-runner-name` (not the host's actual hostname) when you add the IPC to `config/fleet.txt`.
 
-### 3.3 (Optional) Pre-stage the image tar for air-gapped fallback
+### 3.3 Add the IPC to the fleet roster
+
+The provisioning script registers the runner with GitHub but does **not** automatically add the IPC to `config/fleet.txt`. That's a deliberate two-step gate so a half-provisioned IPC isn't accidentally pulled into deploys.
+
+Edit `config/fleet.txt` and append the new hostname:
+
+```
+edge-east
+edge-site-dallas
+edge-site-houston   # <-- new IPC added here
+```
+
+Commit and push. The next deploy fans out to it.
+
+### 3.4 (Optional) Pre-stage the image tar for air-gapped fallback
 
 If the IPC may temporarily lose internet, pre-stage a tar so the deploy still works:
 
@@ -313,15 +329,25 @@ sudo mv ignition-edge-8.3.6.tar /opt/ignition-images/
 
 ## Phase 4 — First deployment
 
-Push any change to `main` (or use **Actions → Deploy Ignition Edge → Run workflow**). The runner will:
+Push any change to `main` (or use **Actions → Deploy Ignition Edge → Run workflow**). The workflow has two jobs:
 
-1. Verify Docker access
-2. Log in to GHCR using the workflow's `GITHUB_TOKEN`
-3. Pull `ghcr.io/<owner>/ignition-edge:<version>` (or load from tar fallback)
-4. Write a runtime `.env` from Secrets + repo defaults
-5. `docker compose down --timeout 60 && up -d`
-6. Poll `http://localhost:8088/StatusPing` until it returns `RUNNING`
-7. Clean up the runtime `.env`
+| Job | Where | What |
+|---|---|---|
+| `discover` | `ubuntu-latest` (GitHub-hosted) | Reads `config/fleet.txt` (or the `ipc` workflow input) and emits a JSON array of target hostnames. |
+| `deploy` | `[self-hosted, <hostname>]` (matrix, one job per IPC) | Runs the actual deployment. With `fail-fast: false` so one bad IPC doesn't cancel the others. |
+
+Each matrix `deploy` job runs on its target IPC's runner and:
+
+1. Verifies Docker access
+2. Logs in to GHCR using the workflow's `GITHUB_TOKEN`
+3. Pulls `ghcr.io/<owner>/ignition-edge:<version>` (or loads from tar fallback)
+4. Writes a runtime `.env` (`IGN_NAME = matrix.ipc`)
+5. Rewrites the transmitter `edgeNodeId` to the IPC's hostname
+6. `docker compose down --timeout 60 && up -d`
+7. Polls `http://localhost:8088/StatusPing` until it returns `RUNNING`
+8. Cleans up the runtime `.env`
+
+**Targeting a single IPC** (canary deploys, debugging): use `Run workflow → ipc = <hostname>`. The `discover` job sees the input and emits a one-element matrix; only that runner picks up the job.
 
 Open `http://<ipc-ip>:8088` in a browser to verify. Log in with the admin credentials from the Secrets. Quick post-deploy checklist:
 

@@ -23,7 +23,7 @@ RUNNER_USER="github-runner"
 RUNNER_HOME="/opt/actions-runner"
 IGNITION_IMAGES_DIR="/opt/ignition-images"
 IGNITION_PORTS=(8088 8043 8060)
-RUNNER_LABELS="self-hosted,Linux,X64,ipc"
+RUNNER_LABELS_BASE="self-hosted,Linux,X64,ipc"
 
 # ----- Args & sanity ---------------------------------------------------------
 if [[ $# -lt 1 ]]; then
@@ -33,6 +33,11 @@ if [[ $# -lt 1 ]]; then
 fi
 TOKEN="$1"
 RUNNER_NAME="${2:-$(hostname)}"
+# The hostname is appended to the runner's label set so that deploy.yml's
+# matrix can target this specific IPC via `runs-on: [self-hosted, <hostname>]`.
+# Required for fleet fan-out to work — without this, all IPCs share the
+# same labels and GitHub picks one runner from the pool per workflow run.
+RUNNER_LABELS="${RUNNER_LABELS_BASE},${RUNNER_NAME}"
 
 if [[ $EUID -ne 0 ]]; then
   echo "ERROR: must run as root (use sudo)." >&2

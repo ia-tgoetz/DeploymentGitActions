@@ -447,3 +447,33 @@ Why this is in a file-based VCS resource (not env vars or JVM args): unlike `GAT
 When NOT to use this posture: a topology where the Edge needs to serve GAN connections (rare for actual Edge IPCs — that's more common for site Edges acting as collector hubs in their own right). In that case, flip `allowIncoming` to `true` and add the originator's cert to `services/pki/trusted/clients/`. Keep `securityPolicy=ApprovedOnly` and the rest as-is.
 
 ---
+
+### Optimization Strategy: 2026-05-08 (seeded manually)
+
+**Fleet deploys with `runs-on: self-hosted` send each workflow run to ONE random runner from the labelled pool. To fan out to every IPC, give each runner a unique label (its hostname) and use a matrix strategy that targets `[self-hosted, <hostname>]` per matrix entry.**
+
+The naive setup — N self-hosted runners all sharing labels `self-hosted,Linux,X64,ipc` — looks like it would distribute work to all of them, but it doesn't. GitHub Actions assigns a queued job to whichever runner in the matching label set is idle and picks it up first; the other runners stay Idle. So a `git push` triggers a deploy on exactly ONE IPC, not all of them.
+
+The working pattern in this repo:
+
+1. **Per-IPC label.** `provision-runner.sh` registers each runner with `self-hosted,Linux,X64,ipc,$(hostname)`. The hostname-as-label is what lets the workflow target a specific IPC.
+2. **Tracked fleet roster.** `config/fleet.txt` lists every IPC by hostname, one per line, with `#` comments. Adding an IPC means appending its hostname and pushing — the next deploy picks it up.
+3. **Two-phase workflow.** A `discover` job runs on `ubuntu-latest`, parses `fleet.txt` (or a `workflow_dispatch.inputs.ipc` override), and emits a JSON array as a job output. The `deploy` job consumes that output via `matrix.ipc` and uses `runs-on: [self-hosted, "${{ matrix.ipc }}"]` — that label combination resolves to exactly one runner.
+4. **`fail-fast: false`** on the matrix so a bad IPC doesn't cancel deploys to the rest of the fleet.
+
+Why this design over alternatives:
+
+- **Tracked file vs runners API:** the GitHub API can list runners, but querying it from the workflow needs a PAT with admin scope (added Secret + ongoing rotation). A plain text file in the repo is the source of truth, version-controlled, and trivially diffable. Trade-off: provisioning a new IPC is a two-step gate (provision + add to fleet.txt). That's actually a feature — it prevents a half-provisioned IPC from being pulled into deploys.
+- **Hostname as label vs explicit per-IPC labels (`region-east-01`):** hostname is already the gateway name and the runner name. Reusing it as the label keeps everything aligned — debugging "which IPC failed" is just looking at the matrix entry. Custom labels would let you target groups (e.g. `runs-on: [self-hosted, region-east]`), but you can do that via separate workflows or matrix filters when the fleet warrants it.
+- **Matrix vs N separate workflows:** matrix gives one workflow run with N jobs, which is one entry in the Actions UI and one set of audit logs. N workflows is N runs to monitor — operationally noisier.
+
+Race condition to know about: the `Commit agent memory if changed` step runs per matrix job. If two IPCs both fail and both agents append a lesson, both jobs try to push to `main` concurrently — the second one's push gets rejected (non-fast-forward). Fix is `git pull --rebase` retry-with-backoff on push failure (5 attempts, ~1-5s sleep each). Without the retry, the second lesson silently doesn't land.
+
+When NOT to use the matrix pattern:
+- **Single-IPC deployments.** The matrix overhead (discover job, JSON parsing, output passing) is wasted complexity if there's only ever one runner.
+- **Sequenced rolling deploys.** `fail-fast: false` runs all matrix jobs in parallel. For "deploy to canary first, then everyone else", split into two jobs with `needs:` between them, or use a manual `workflow_dispatch.inputs.ipc` for the canary and an automatic push trigger for the full fleet (current setup supports both).
+- **Heterogeneous fleet.** If different IPC classes need different deploy steps (e.g. some sites have extra modules), the matrix strategy gets unwieldy. Use job-level conditions or split into multiple workflows keyed off labels (`runs-on: [self-hosted, region-east]`).
+
+For 5000+ IPC fleets the matrix approach hits GitHub's per-job concurrency limits and the `fleet.txt` file becomes a merge-conflict hotspot. At that scale, swap the static file for a runtime API call against your runner registry, batch deploys into smaller chunks (e.g., 50 at a time), and consider a job orchestrator outside Actions entirely. But for tens to low hundreds of IPCs, this pattern works.
+
+---

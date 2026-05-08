@@ -1,5 +1,10 @@
 name: Deploy Ignition Edge
 
+# Fans out one job per IPC listed in config/fleet.txt. Each matrix job
+# targets a specific runner via the runner's hostname label (added by
+# scripts/provision-runner.sh). fail-fast: false so a single bad IPC
+# doesn't cancel deploys to the rest of the fleet.
+
 on:
   push:
     branches: [main]
@@ -7,11 +12,60 @@ on:
       # Agent-authored memory updates must NOT trigger another deploy
       - 'scripts/memory.md'
   workflow_dispatch:
+    inputs:
+      ipc:
+        description: 'Target a single IPC by hostname (leave empty to deploy to the entire fleet)'
+        type: string
+        default: ''
 
 jobs:
+  # -----------------------------------------------------------------------
+  # discover: read config/fleet.txt (or the workflow_dispatch input) and
+  # emit a JSON array of hostnames the deploy job's matrix consumes.
+  # -----------------------------------------------------------------------
+  discover:
+    runs-on: ubuntu-latest
+    outputs:
+      ipcs: ${{ steps.read.outputs.ipcs }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Resolve target IPCs
+        id: read
+        run: |
+          set -euo pipefail
+          target='${{ github.event.inputs.ipc }}'
+          if [[ -n "$target" ]]; then
+            echo "Targeting single IPC: $target"
+            ipcs=$(echo "$target" | jq -R . | jq -sc .)
+          else
+            if [[ ! -f config/fleet.txt ]]; then
+              echo "ERROR: config/fleet.txt is missing." >&2
+              exit 1
+            fi
+            # Strip comments + blank lines + trailing whitespace, JSON-encode
+            ipcs=$(sed -E 's/[[:space:]]+$//' config/fleet.txt \
+                    | grep -vE '^\s*(#|$)' \
+                    | jq -R . | jq -sc .)
+          fi
+          echo "Fleet roster (matrix): $ipcs"
+          echo "ipcs=$ipcs" >> "$GITHUB_OUTPUT"
+
+  # -----------------------------------------------------------------------
+  # deploy: matrix job, one per IPC. Uses the hostname label to target
+  # that IPC's runner specifically.
+  # -----------------------------------------------------------------------
   deploy:
-    runs-on: self-hosted
+    needs: discover
+    if: needs.discover.outputs.ipcs != '[]' && needs.discover.outputs.ipcs != ''
+    strategy:
+      fail-fast: false
+      matrix:
+        ipc: ${{ fromJSON(needs.discover.outputs.ipcs) }}
+    runs-on: [self-hosted, "${{ matrix.ipc }}"]
     environment: production
+    timeout-minutes: 30
     permissions:
       contents: write   # bumped from read so the agent can push memory.md
       packages: read
@@ -42,7 +96,10 @@ jobs:
 
       - name: Write runtime .env
         run: |
-          IGN_NAME="${IGN_NAME_OVERRIDE:-$(hostname | tr '[:upper:]' '[:lower:]')}"
+          # The matrix entry IS the gateway name — it matches the host's
+          # hostname AND the runner's hostname label. No more hostname-vs-secret
+          # reconciliation logic needed in the fleet model.
+          IGN_NAME="${{ matrix.ipc }}"
           # Source GAN config (host, port, SSL flags, etc.) so it can flow
           # into docker-compose's GATEWAY_NETWORK_0_* env vars on first boot.
           if [ -f config/central-gateway.env ]; then
@@ -73,7 +130,6 @@ jobs:
           EOF
           chmod 600 .env
         env:
-          IGN_NAME_OVERRIDE: ${{ secrets.IGN_NAME }}
           GATEWAY_ADMIN_USERNAME: ${{ secrets.GATEWAY_ADMIN_USERNAME }}
           GATEWAY_ADMIN_PASSWORD: ${{ secrets.GATEWAY_ADMIN_PASSWORD }}
           # Optional: override the fleet keystore password if you set a
@@ -82,11 +138,7 @@ jobs:
           IGN_FLEET_KEYSTORE_PASSWORD: ${{ secrets.IGN_FLEET_KEYSTORE_PASSWORD }}
 
       - name: Set transmitter edgeNodeId to gateway name
-        run: |
-          IGN_NAME="${IGN_NAME_OVERRIDE:-$(hostname | tr '[:upper:]' '[:lower:]')}"
-          bash scripts/configure-transmitter.sh "$IGN_NAME"
-        env:
-          IGN_NAME_OVERRIDE: ${{ secrets.IGN_NAME }}
+        run: bash scripts/configure-transmitter.sh "${{ matrix.ipc }}"
 
       - name: Restart Ignition Edge
         run: |
@@ -105,7 +157,7 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           set -e
-          echo "Deploy failed — starting Claude agent in venv (PEP 668-safe)..."
+          echo "Deploy failed on ${{ matrix.ipc }} — starting Claude agent in venv (PEP 668-safe)..."
           python3 -m venv /tmp/agent-venv
           /tmp/agent-venv/bin/pip install --quiet --upgrade pip
           /tmp/agent-venv/bin/pip install --quiet -r scripts/requirements.txt
@@ -115,12 +167,22 @@ jobs:
         if: always()
         run: |
           if ! git diff --quiet -- scripts/memory.md 2>/dev/null; then
-            echo "Agent recorded a new lesson — committing."
+            echo "Agent recorded a new lesson on ${{ matrix.ipc }} — committing."
             git config --local user.name "Claude DevOps Agent"
             git config --local user.email "noreply@anthropic.com"
             git add scripts/memory.md
-            git commit -m "docs: agent recorded new lesson [skip ci]"
-            git push
+            git commit -m "docs: agent lesson from ${{ matrix.ipc }} [skip ci]"
+            # Multiple matrix jobs can hit this step concurrently. Retry with
+            # rebase to handle the race when two IPCs both write a lesson.
+            for attempt in 1 2 3 4 5; do
+              if git push; then
+                echo "Pushed (attempt $attempt)."
+                break
+              fi
+              echo "Push rejected, rebasing and retrying ($attempt/5)..."
+              git pull --rebase origin main || true
+              sleep $((RANDOM % 5 + 1))
+            done
           else
             echo "No memory changes to commit."
           fi

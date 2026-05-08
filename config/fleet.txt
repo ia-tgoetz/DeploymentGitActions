@@ -1,0 +1,23 @@
+# Fleet roster — one entry per IPC, hostname only.
+#
+# Each hostname here MUST match:
+#   1. The host's actual `hostname` (the runner picks it up automatically
+#      during `provision-runner.sh`), AND
+#   2. A label on the registered runner (provision-runner.sh adds it).
+#
+# Adding an IPC:
+#   1. Provision the new IPC: `sudo bash scripts/provision-runner.sh <token>`.
+#   2. Confirm it shows up at:
+#        https://github.com/ia-tgoetz/DeploymentGitActions/settings/actions/runners
+#      with a label matching its hostname.
+#   3. Append the hostname here, commit, push. The next deploy fans out to it.
+#
+# Removing an IPC:
+#   1. Delete its line here, commit, push.
+#   2. Decommission the runner via Settings -> Actions -> Runners -> remove.
+#
+# Lines starting with '#' and blank lines are ignored.
+# Trailing whitespace is trimmed.
+
+edge-east
+edge-site-dallas
