@@ -31,24 +31,41 @@ The container will burn CPU restarting indefinitely; the gateway never opens por
 
 ### Troubleshooting Rule: 2026-05-07 (seeded manually)
 
-**Module bind-mount + `-Dignition.gateway.externalModulesFolder` does NOT auto-install modules in production. Use a derived image with `COPY` to `user-lib/modules/` instead.**
+**Path matters for third-party module install. Use `/usr/local/bin/ignition/user-lib/modules/` — bind mount or Dockerfile COPY both work.**
 
-We initially staged third-party `.modl` files in `services/modules/` and bind-mounted that folder to `/usr/local/bin/ignition/external-modules` inside the container, with JVM flags `-Dignition.modules.install.unattended=true` and `-Dignition.gateway.externalModulesFolder=/usr/local/bin/ignition/external-modules`. The module never installed — it just sat there.
+The IA `module-dev-ignition` example uses `/usr/local/bin/ignition/external-modules` plus JVM flags `-Dignition.modules.install.unattended=true` and `-Dignition.gateway.externalModulesFolder=...`. Those flags are for module developers iterating on unsigned modules — they do not auto-install modules in a production setup. A `.modl` placed there with those flags will sit untouched.
 
-That JVM-flag pattern is from IA's **module-development** demo (see Adam Koch's reactflow example). It's intended for developers iterating on their own unsigned modules — not for fleet deployment of signed third-party modules.
+The IA-documented production path for third-party modules is `/usr/local/bin/ignition/user-lib/modules/`. Modules in that directory load on every gateway start and are not uninstallable from the web UI — correct fleet-management behavior. Either approach gets the file there:
 
-**The IA-recommended production pattern for 8.3** (see <https://www.docs.inductiveautomation.com/docs/8.3/platform/docker-image/docker-image-examples>) is to derive a custom image:
+- **Bind mount (simpler):** `./services/modules:/usr/local/bin/ignition/user-lib/modules` in compose. No build step; module changes apply on next container restart.
+- **Image-baked (more portable):** `COPY services/modules/ /usr/local/bin/ignition/user-lib/modules/` in a Dockerfile that extends the base image. Modules versioned with the image; supports air-gapped distribution.
 
-```dockerfile
-ARG BASE_IMAGE
-ARG IGN_RELEASE
-FROM ${BASE_IMAGE}:${IGN_RELEASE}
-COPY services/modules/ /usr/local/bin/ignition/user-lib/modules/
+We chose the bind mount.
+
+### Troubleshooting Rule: 2026-05-07 (seeded manually)
+
+**`GATEWAY_MODULES_ACCEPTED` (and the License/Certs siblings) is a case-insensitive SUBSTRING match against the module's internal name. Always include the module's DISPLAY name; the resource-folder package ID alone may not match.**
+
+Set `GATEWAY_MODULES_ACCEPTED=com.cirruslink.mqtt.transmission.gateway` (the resource-folder ID for Cirrus Link MQTT Transmission). The module appeared in `services/modules/` but did not auto-install — Ignition's internal check looks at the module's display name (`MQTT Transmission`), and the resource-folder ID is not a substring of it.
+
+Fix: include both forms, comma-separated.
+
+```yaml
+GATEWAY_MODULES_ACCEPTED: "MQTT Transmission,com.cirruslink.mqtt.transmission.gateway"
+ACCEPT_MODULE_LICENSES: "MQTT Transmission,com.cirruslink.mqtt.transmission.gateway"
+ACCEPT_MODULE_CERTS:    "MQTT Transmission,com.cirruslink.mqtt.transmission.gateway"
 ```
 
-Modules placed in `user-lib/modules/` are loaded automatically on every gateway start. They cannot be uninstalled from the web UI — which is the right behavior for fleet-managed sites. EULA acceptance still goes through `GATEWAY_MODULES_ACCEPTED` / `ACCEPT_MODULE_LICENSES` / `ACCEPT_MODULE_CERTS` env vars.
+Whichever string Ignition matches against, one of them hits. **When adding a new third-party module, always include both the display name and the resource-folder ID in these env vars.**
 
-**`/usr/local/bin/ignition/external-modules`** (with the JVM flag) is for the dev workflow.
-**`/usr/local/bin/ignition/user-lib/modules/`** (via Dockerfile COPY) is for production.
+### Troubleshooting Rule: 2026-05-07 (seeded manually)
+
+**`GATEWAY_ADMIN_USERNAME` and `GATEWAY_ADMIN_PASSWORD` env vars are honored ONLY on the first boot of a fresh gateway DB. Changing them after init is a no-op — rotate via the web UI or wipe the named volume.**
+
+If a gateway entered an init-loop failure mode (e.g. the `-h`/`-s`-without-`-a` restart loop) before completing DB init, the named volume can end up in a partially-written state where the DB exists but no admin user does. Subsequent successful boots load that DB and ignore the env-var credentials, leaving the gateway with no working login.
+
+Fix: `docker compose down -v` to wipe the named volume entirely, then redeploy. The env-var credentials apply on the next boot because the DB is genuinely fresh.
+
+For ongoing password rotation in a healthy deployment, change it through the gateway UI (or the gateway-network API) rather than by re-deploying with new secrets.
 
 ---

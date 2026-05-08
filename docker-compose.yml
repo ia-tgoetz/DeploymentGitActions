@@ -1,13 +1,6 @@
 services:
   ignition-edge:
-    # Build a derived image that bakes services/modules/*.modl into
-    # /usr/local/bin/ignition/user-lib/modules. See ./Dockerfile.
-    build:
-      context: .
-      args:
-        BASE_IMAGE: ${IGNITION_IMAGE:-ghcr.io/ia-tgoetz/ignition}
-        IGN_RELEASE: ${IGN_RELEASE:-8.3.6}
-    image: ignition-edge:${IGN_RELEASE:-8.3.6}
+    image: ${IGNITION_IMAGE:-ghcr.io/ia-tgoetz/ignition}:${IGN_RELEASE:-8.3.6}
     user: 0:0
     container_name: ${IGN_NAME:-ignition-edge}
     restart: unless-stopped
@@ -23,11 +16,13 @@ services:
       GATEWAY_ADMIN_PASSWORD: ${GATEWAY_ADMIN_PASSWORD:?GATEWAY_ADMIN_PASSWORD is required}
       IGNITION_EDITION: edge
       TZ: ${TZ:-America/New_York}
-      # Pre-accept third-party module licenses on first boot (module ID match).
-      # Modules at user-lib/modules still need EULA acceptance.
-      GATEWAY_MODULES_ACCEPTED: ${GATEWAY_MODULES_ACCEPTED:-com.cirruslink.mqtt.transmission.gateway}
-      ACCEPT_MODULE_LICENSES: ${ACCEPT_MODULE_LICENSES:-com.cirruslink.mqtt.transmission.gateway}
-      ACCEPT_MODULE_CERTS: ${ACCEPT_MODULE_CERTS:-com.cirruslink.mqtt.transmission.gateway}
+      # Pre-accept third-party module licenses on first boot.
+      # IA's matcher is a case-insensitive SUBSTRING match against the module's
+      # internal name. We include both the display name and the resource-folder
+      # ID for safety — whichever Ignition checks against, we hit it.
+      GATEWAY_MODULES_ACCEPTED: ${GATEWAY_MODULES_ACCEPTED:-MQTT Transmission,com.cirruslink.mqtt.transmission.gateway}
+      ACCEPT_MODULE_LICENSES: ${ACCEPT_MODULE_LICENSES:-MQTT Transmission,com.cirruslink.mqtt.transmission.gateway}
+      ACCEPT_MODULE_CERTS: ${ACCEPT_MODULE_CERTS:-MQTT Transmission,com.cirruslink.mqtt.transmission.gateway}
     # No -h/-s/-a flags: the container's internal listener is 8088/8043 by
     # default, and the ports: section above maps them to the host. -h/-s/-a
     # are only for configuring the gateway's public-facing URL when behind
@@ -41,6 +36,12 @@ services:
       - ignition-data:/usr/local/bin/ignition/data
       - ignition-resources:/usr/local/bin/ignition/data/config/resources
       - ignition-projects:/usr/local/bin/ignition/data/projects
+      # Modules: bind-mount services/modules/ to the IA-documented path for
+      # third-party modules. Anything *.modl in this directory is loaded on
+      # every gateway start and is not uninstallable from the web UI — which
+      # is the right behavior for fleet-managed sites.
+      # See: https://www.docs.inductiveautomation.com/docs/8.3/platform/docker-image/docker-image-examples
+      - ignition-modules:/usr/local/bin/ignition/user-lib/modules
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:8088/StatusPing"]
       interval: 30s
@@ -67,4 +68,10 @@ volumes:
     driver_opts:
       type: none
       device: services/projects
+      o: bind
+  ignition-modules:
+    driver: local
+    driver_opts:
+      type: none
+      device: services/modules
       o: bind

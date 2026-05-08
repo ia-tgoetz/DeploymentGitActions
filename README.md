@@ -18,8 +18,7 @@ Automated deployment and configuration sync for Inductive Automation's Ignition 
 ```
 .
 ├── .github/workflows/deploy.yml    # CI/CD workflow — runs on every push to main
-├── Dockerfile                      # Derived image: base GHCR + services/modules/*.modl
-├── docker-compose.yml              # Production: Ignition Edge only (build + run)
+├── docker-compose.yml              # Production: Ignition Edge only
 ├── docker-compose.test.yml         # Adds a central GW container for local GAN testing
 ├── .env.example                    # Template — copy to .env per environment
 ├── config/
@@ -213,24 +212,22 @@ After it completes, verify in GitHub: `Settings → Actions → Runners` — the
 
 ### 3.3 Fetch third-party modules
 
-Third-party `.modl` files are baked into a derived Docker image at build time (the IA-recommended pattern for 8.3 — see [docker-image-examples](https://www.docs.inductiveautomation.com/docs/8.3/platform/docker-image/docker-image-examples)). The repo's `Dockerfile` extends the GHCR base image and copies `services/modules/*.modl` into `/usr/local/bin/ignition/user-lib/modules/`, where Ignition loads them automatically on every gateway start.
+Third-party `.modl` files in `services/modules/` are bind-mounted into the IA-documented module path inside the container — `/usr/local/bin/ignition/user-lib/modules/` — where Ignition loads them automatically on every gateway start. Modules placed there are not uninstallable from the web UI, which is the right behavior for fleet-managed sites. See the [IA 8.3 docker-image docs](https://www.docs.inductiveautomation.com/docs/8.3/platform/docker-image/docker-image-examples).
 
-The `.modl` binaries themselves are gitignored — they live alongside the repo on each IPC, not in Git. The deploy workflow runs `fetch-modules.sh` automatically before each build, but you can also run it manually:
+The `.modl` binaries themselves are gitignored — they live alongside the repo on each IPC, not in Git. The deploy workflow runs `fetch-modules.sh` automatically before each restart, but you can also run it manually:
 
 ```bash
 cd ~/path/to/repo
 bash scripts/fetch-modules.sh   # or .\scripts\fetch-modules.ps1 on Windows
 ```
 
-Currently configured: **Cirrus Link MQTT Transmission 5.0.3** (module ID `com.cirruslink.mqtt.transmission.gateway`).
+Currently configured: **Cirrus Link MQTT Transmission 5.0.3**.
 
 To add another module:
 
 1. Edit the `MODULES` list in `scripts/fetch-modules.sh` / `.ps1`
-2. Append the module ID (Java package style — find it in the gateway's web UI or the module's documentation) to `GATEWAY_MODULES_ACCEPTED`, `ACCEPT_MODULE_LICENSES`, and `ACCEPT_MODULE_CERTS` in `.env.example` and the workflow's `.env` write step
-3. Push to `main` — the runner re-fetches, rebuilds the derived image, and redeploys
-
-The build is fast: one `COPY` layer over the cached base. It only re-runs when `services/modules/` actually changes.
+2. Append the module's display name **and** package ID to `GATEWAY_MODULES_ACCEPTED`, `ACCEPT_MODULE_LICENSES`, and `ACCEPT_MODULE_CERTS` in `.env.example` and the workflow's `.env` write step. IA's matcher is a case-insensitive substring match against the module's internal name; including both forms means it matches whatever Ignition checks.
+3. Push to `main` — the runner re-fetches and the next container start picks up the new module from the bind mount.
 
 ### 3.4 (Optional) Pre-stage the image tar for air-gapped fallback
 

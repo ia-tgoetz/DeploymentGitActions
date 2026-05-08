@@ -63,9 +63,6 @@ jobs:
           GATEWAY_ADMIN_USERNAME: ${{ secrets.GATEWAY_ADMIN_USERNAME }}
           GATEWAY_ADMIN_PASSWORD: ${{ secrets.GATEWAY_ADMIN_PASSWORD }}
 
-      - name: Build derived image (bakes in .modl files)
-        run: docker compose build
-
       - name: Restart Ignition Edge
         run: |
           docker compose down --timeout 60
