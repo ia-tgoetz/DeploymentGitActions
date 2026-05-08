@@ -1,0 +1,15 @@
+# Pre-built image tarballs are OUTPUTS of run-build-edge, not inputs.
+# Without this, every subsequent build re-ships ~2 GB to the daemon.
+*.tar
+*.tar.gz
+*.tar.zst
+*.zip
+
+# Git metadata isn't useful in the image.
+.gitignore
+.git/
+
+# Logs and temp files that might land here during local debugging.
+*.log
+.DS_Store
+Thumbs.db
