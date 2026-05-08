@@ -354,13 +354,13 @@ environment:
   GATEWAY_NETWORK_0_ENABLESSL: true
   GATEWAY_NETWORK_0_ENABLED: true
 volumes:
-  - ./services/pki/trusted/clients:/usr/local/bin/ignition/data/pki/trusted/clients
+  - ./services/pki/trusted/clients:/usr/local/bin/ignition/data/config/local/ignition/gateway-network/client/security/pki/trusted/certs
 ```
 
 How it works:
 
 - The `GATEWAY_NETWORK_<idx>_*` env vars are read by IA's image entrypoint on the first DB-init. They seed an outgoing GAN connection in `config.idb`. Subsequent boots ignore the env vars (DB is the source of truth from then on).
-- The bind mount overlays just `data/pki/trusted/clients/` — a subdirectory inside the named volume. Public certs placed there before first boot bypass Ignition's cert-quarantine step. The rest of `data/pki/` (private keys, runtime trust additions via the web UI) goes to the named volume normally.
+- The bind mount overlays just the GAN-client trust store at `data/config/local/ignition/gateway-network/client/security/pki/trusted/certs/`. **The path is non-obvious** — IA's PKI trust isn't a single flat tree, it's namespaced per-feature (gateway-network, opcua, etc.) under `data/config/local/<feature>/security/pki/trusted/`. Earlier `data/pki/trusted/clients/` was a guess that turned out wrong; verify the path against the running gateway's filesystem if you ever doubt it.
 
 Why both are required: enabling SSL on the GAN connection without pre-trusting the cert means Ignition flags the connection as `Quarantined` on first attempt, and an admin has to approve the cert via the web UI before traffic flows. Pre-trusting flips it to `Connected` immediately on first boot. For a fleet of headless IPCs, the manual approval step would be a per-site human bottleneck.
 

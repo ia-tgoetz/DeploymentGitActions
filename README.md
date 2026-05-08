@@ -44,8 +44,10 @@ Automated deployment and configuration sync for Inductive Automation's Ignition 
     ├── provision-runner.sh         # One-shot: full IPC provisioning (Docker, UFW, runner)
     ├── load-image.sh               # IPC: ensure derived image is available (GHCR or tar)
     ├── health-check.sh             # IPC: poll /StatusPing until RUNNING
-    ├── configure-gan.sh            # IPC: one-time GAN connection setup
+    ├── configure-gan.sh            # IPC: one-time GAN connection setup (legacy fallback)
     ├── configure-transmitter.sh    # Deploy-time: rewrites edgeNodeId in every Cirrus Link transmitter config to the IPC's hostname
+    ├── fetch-server-cert.ps1       # Fetch a remote server's public TLS cert and stage it under services/pki/trusted/clients/ (Windows)
+    ├── fetch-server-cert.sh        # Same, for Linux/macOS (uses openssl)
     ├── deploy_agent.py             # Claude agent — runs on deploy failure, investigates, may record a lesson
     ├── memory.md                   # Persistent agent memory (auto-appended to)
     └── requirements.txt            # Python deps for deploy_agent.py

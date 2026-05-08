@@ -57,10 +57,12 @@ services:
       # Pre-trusted certs for outgoing GAN connections. Drop the Hub's
       # public .crt (e.g. engine-demo.chariot.io.crt) into
       # services/pki/trusted/clients/ to bypass Ignition's cert-quarantine
-      # step on first boot. The directory is part of the named-volume's
-      # data tree, but the bind mount overlays just this subdirectory so
-      # Ignition can still manage the rest of /data/pki/ at runtime.
-      - ./services/pki/trusted/clients:/usr/local/bin/ignition/data/pki/trusted/clients
+      # step on first boot. The destination is Ignition's GAN-client
+      # trust store (data/config/local/ignition/gateway-network/client/
+      # security/pki/trusted/certs/). The bind mount overlays just this
+      # subdirectory inside the ignition-data named volume, so Ignition
+      # can still manage the rest of /data/ at runtime.
+      - ./services/pki/trusted/clients:/usr/local/bin/ignition/data/config/local/ignition/gateway-network/client/security/pki/trusted/certs
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:8088/StatusPing"]
       interval: 30s

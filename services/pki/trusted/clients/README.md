@@ -1,8 +1,9 @@
 # Pre-trusted client PKI certificates
 
 Drop public `.crt` files here to pre-trust them. This directory is bind-mounted at
-`/usr/local/bin/ignition/data/pki/trusted/clients/` inside the container, so any
-certificate file present at first boot bypasses Ignition's cert-quarantine step
+`/usr/local/bin/ignition/data/config/local/ignition/gateway-network/client/security/pki/trusted/certs/`
+inside the container — the actual location Ignition 8.3 reads for GAN client trust.
+Any certificate file present at first boot bypasses Ignition's cert-quarantine step
 for outgoing GAN connections.
 
 Typical contents:
