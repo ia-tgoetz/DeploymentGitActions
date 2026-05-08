@@ -321,7 +321,17 @@ docker compose -f docker-compose.yml -f docker-compose.test.yml down -v
    > ```
    > The `<id>` element is what `ACCEPT_MODULE_*` matches against — not the display name, not the resource-folder path.
 
-3. Push to `main`. The **Build Edge Image** workflow rebuilds and re-publishes; the **Deploy Ignition Edge** workflow then pulls the new image on its next run. (If you only changed `modules.txt` and want to deploy immediately afterward, push a second commit or run the deploy workflow manually.)
+3. Push to `main`. The **Build Edge Image** workflow rebuilds and re-publishes; the **Deploy Ignition Edge** workflow then pulls the new image on its next run.
+
+> ⚠️ **Module-version upgrades require a data-volume wipe on each IPC** to actually take effect. Ignition extracts modules from `user-lib/modules/` into `/data/modules/` (the named volume) on first install, then loads from the volume copy on subsequent boots. A new image with a newer module version doesn't override the cached extraction.
+>
+> For the new version to land:
+> ```bash
+> docker compose down -v   # wipes the data volume — DB and module cache reset
+> ```
+> Then trigger a deploy. Skip this and the IPC keeps running the old version even though it pulled the new image.
+>
+> `down -v` is destructive (gateway DB resets); fine for Edge IPCs whose DB content is reproducible from `services/` bind mounts and pre-staged config, but never run it on a gateway whose DB holds state you can't recreate. At fleet scale this becomes a sequenced rolling upgrade rather than a fire-and-forget `git push`.
 
 ### Bumping the Ignition base version
 
@@ -418,6 +428,9 @@ docker compose down -v
 docker volume ls | grep deploymentgitactions   # confirm it's gone
 ```
 Then redeploy. See the "First-boot gotcha" callout in Phase 4.
+
+**Module shows the wrong version (e.g. image has 5.0.3 but gateway shows 5.0.0)**
+Ignition extracts modules into `/data/modules/` on first install, then loads from there. New image versions are shadowed by the cached extraction. Same fix as above: `docker compose down -v` then redeploy. See the warning under "Adding or upgrading a third-party module" in Operations.
 
 **Runner shows offline in GitHub UI**
 ```bash

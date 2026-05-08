@@ -29,42 +29,24 @@ The container will burn CPU restarting indefinitely; the gateway never opens por
 
 ---
 
-### Troubleshooting Rule: 2026-05-07 (seeded manually)
+### Troubleshooting Rule: 2026-05-07 (seeded manually, revised 2026-05-08)
 
-**For runtime module install in 8.3, use a DIRECT bind mount to `external-modules` plus the unattended-install JVM flags. Named-volume-with-bind interferes with the first-boot module scan even when pointed at the same host path.**
+**Runtime module installation on Ignition Edge 8.3 is brittle. Bake third-party modules into a derived image at build time instead — that's the supported and predictable path.**
 
-Auto-installing the Cirrus Link MQTT Transmission `.modl` failed under two patterns before working:
+We exhausted multiple runtime patterns trying to get Cirrus Link MQTT Transmission to install on Edge before settling on image-baking:
 
-1. `/usr/local/bin/ignition/user-lib/modules/` (bind mount, no flags) — IA's docs describe this as the path for "built-in" modules, but in our 8.3.6 setup nothing loaded from here on first boot.
+1. `/usr/local/bin/ignition/user-lib/modules/` mounted via named-volume + `o:bind`, no JVM flags — module appeared in Config → Modules but state was `default`, never loaded.
+2. `/usr/local/bin/ignition/external-modules/` via named-volume + `o:bind` plus the `module-dev-ignition` JVM flag combo (`unattended`, `trust-unknown-certificates`, `externalModulesFolder`) — silent skip, no install attempt logged.
+3. Same as (2) but with a **direct** bind mount (`./services/modules:/usr/local/bin/ignition/external-modules`) — still failed, but for a different reason (gateway DB cached an old catalog entry from prior attempts).
+4. **Image-baking** — `Dockerfile` extends `inductiveautomation/ignition:8.3.6` and `COPY`s `*.modl` into `/usr/local/bin/ignition/user-lib/modules/`, image is pushed to GHCR, IPC pulls. **This works.**
 
-2. `/usr/local/bin/ignition/external-modules/` mounted via a **named volume with `driver: local`, `o: bind`, `device: services/modules`** — same JVM flags as below. Still didn't trigger install. The named-volume layer between Docker and the host path apparently breaks Ignition's first-boot scan or watch.
+The image-baking path is what's wired up now (`build/edgeGwBuild/Dockerfile`, `.github/workflows/build-image.yml`, `run-build-edge.{sh,ps1}` for local builds). Modules in `user-lib/modules/` of the IMAGE (not a runtime mount) are loaded by Ignition at boot without going through the install pipeline that does signature/dependency validation. EULA env vars (`ACCEPT_MODULE_LICENSES`, `ACCEPT_MODULE_CERTS`) still apply for the modules baked in.
 
-The pattern that **does** work is from IA's `module-dev-ignition` example (Adam Koch, IA SE):
+**Key takeaways:**
 
-```yaml
-volumes:
-  - ./services/modules:/usr/local/bin/ignition/external-modules   # DIRECT bind, not named-volume-with-bind
-
-command: >
-  -n <name>
-  --
-  -Dignition.allowunsignedmodules=true
-  -Dignition.modules.install.unattended=true
-  -Dignition.modules.install.trust-unknown-certificates=true
-  -Dignition.gateway.externalModulesFolder=/usr/local/bin/ignition/external-modules
-```
-
-Plus EULA env vars matching the actual module ID:
-
-```yaml
-GATEWAY_MODULES_ACCEPTED: "com.cirruslink.mqtt.transmission"
-ACCEPT_MODULE_LICENSES:   "com.cirruslink.mqtt.transmission"
-ACCEPT_MODULE_CERTS:      "com.cirruslink.mqtt.transmission"
-```
-
-**Key takeaway:** for `external-modules`, the bind mount must be a direct `host_path:container_path` entry. Don't use the `driver_opts: type: none, o: bind, device: <path>` named-volume pattern that works fine for `services/projects/` and `services/config/resources/`. Whatever Ignition does to scan that directory at boot is sensitive to the mount type, not just the destination path.
-
-**Behavior to expect:** Ignition consumes the `.modl` from the mounted directory during install (the host file may disappear after first boot). `fetch-modules.sh` re-downloads on the next deploy if needed; named volumes survive container restarts so re-install only happens on a clean DB.
+- **For Edge fleet deployment, image-bake.** Don't try to drop `.modl` into a runtime mount and hope Ignition installs it. The behavior is inconsistent across versions and edition tiers.
+- **The various install-pipeline JVM flags** (`-Dignition.modules.install.unattended=true`, etc.) are from IA's `module-dev-ignition` developer demo. They're for iterating on modules being built, not for production deployment of signed third-party modules.
+- **Named-volume-with-bind has weirdness.** It works fine for `services/projects/` and `services/config/resources/` but appears to interfere with module-folder scans. We never fully root-caused this; once we moved to image-baking the question became moot.
 
 ---
 
@@ -104,24 +86,25 @@ Look for `<id>`, `<name>`, `<requiredignitionversion>`, and especially `<depends
 
 ---
 
-### Troubleshooting Rule: 2026-05-07 (seeded manually)
+### Troubleshooting Rule: 2026-05-08 (revised — earlier draft was wrong)
 
-**Cirrus Link MQTT Transmission 5.0.3 declares a hard dependency on `com.inductiveautomation.eventstream`. Event Streams isn't available on Ignition Edge, so MQTT Transmission 5.0.3 cannot install on Edge.**
+**`<depends>` declarations in `module.xml` are checked by the install pipeline, not the load pipeline. Modules baked into `user-lib/modules/` are loaded directly and bypass the dependency check.**
 
-The manifest:
+Cirrus Link MQTT Transmission 5.0.3 has this in its manifest:
 
 ```xml
 <depends scope="DG">com.inductiveautomation.eventstream</depends>
 ```
 
-`scope="DG"` means the dependency is required for both **D**esigner and **G**ateway scopes. With the dependency unsatisfied, Ignition's module manager silently skips the install — no log entry, no install attempt. The only downstream symptom is a `W [g.TagProviderManagerImpl]: Unable to update Managed Tag Provider 'MQTT Transmission'` warning if there's pre-staged config that references the missing module.
+Event Streams is a Standard-edition module not available on Edge. We initially concluded this meant 5.0.3 simply couldn't run on Edge — and **that was wrong**. The dependency check fires only when Ignition's module install pipeline processes a `.modl` (the pathway you hit when you drop a file into the external-modules folder, or when an admin uploads via the web UI). Modules pre-staged in `user-lib/modules/` of the image are loaded by the runtime directly without going through that install validation.
 
-**For an Edge deployment, do NOT use MQTT Transmission 5.0.3.** Use either:
+**Result: 5.0.3 runs fine on Edge when image-baked**, despite the manifest's `<depends>` declaration. The transmitter publishes to MQTT, all the gateway-scope features work. Whatever EventStream-dependent code paths exist in 5.0.3's Designer-scope DG bundle simply aren't exercised on Edge (there's no Designer attaching to it anyway).
 
-- An older Cirrus Link version that pre-dates the Event Streams dependency (likely 4.0.x — verify by extracting `module.xml` from each candidate before staging).
-- A future version that drops or makes the dependency optional (check Cirrus Link's release notes).
+Implications:
 
-Diagnostic: gateway shows the module is supposed to be there (e.g. via warning about its tag provider), the `.modl` is in the bind-mounted external-modules folder, all install JVM flags are set correctly, but no `Loading module` / `Started module` messages ever appear → check the manifest's `<depends>` block. Mismatch between dependency and the running edition is the most likely cause.
+- **Don't pre-emptively rule out a module on Edge based on a `<depends>` in the manifest.** Bake it in and see what loads. If the gateway-scope code paths the module exercises don't actually need the missing dep, it just works.
+- **The diagnostic pattern earlier (silent skip, no Loading message)** was the install pipeline rejecting the module. That's a different code path from runtime load-from-user-lib. Same outcome (module not running), different cause.
+- **For runtime install attempts that fail silently:** `<depends>` is one cause among several (DB cache poisoning, runtime-mount path quirks). Check `<depends>` AFTER ruling out volume state.
 
 ---
 
@@ -289,5 +272,70 @@ on:
 A push that ONLY changes `scripts/memory.md` is excluded from the trigger and no run starts. Mixed pushes (memory + other files) still trigger normally. Belt-and-suspenders: also include `[skip ci]` in the auto-commit message for visual clarity in the git log, even though it's not load-bearing.
 
 Without this guard the failure mode is: agent records lesson → workflow auto-commits and pushes → push triggers new deploy → if it fails, agent records another lesson → loop. `paths-ignore` is the only thing that breaks the cycle.
+
+---
+
+### Troubleshooting Rule: 2026-05-08 (seeded manually)
+
+**Module-version upgrades require wiping the data volume on the IPC. The image's `user-lib/modules/` is the SOURCE; once Ignition extracts it on first boot, the running module lives in `/data/modules/` (the named volume) and that copy shadows future image updates.**
+
+After we successfully image-baked Cirrus Link 5.0.3, the gateway showed 5.0.0 in Config → Modules. The `.modl` in the running image was 5.0.3, but Ignition was loading from `/data/modules/` which had been seeded from a prior install attempt with 5.0.0.
+
+The upgrade flow that actually rolls a new module version is:
+
+1. Update `build/edgeGwBuild/modules.txt` (or the local `.modl` file) to the new version
+2. CI rebuilds and republishes `ghcr.io/<owner>/ignition-edge:<version>` (or run `run-build-edge` + `run-push-edge` locally)
+3. **On each IPC**, `docker compose down -v` to wipe the data volume — this is the part that's easy to forget
+4. Trigger a deploy → fresh DB, fresh extraction from `user-lib/modules/`, new version loads
+
+Without step 3, IPCs keep running the cached old version even though they pulled the new image. The image is correct; the runtime is just loading from a stale source.
+
+Diagnostic confirmation: extract `module.xml` from the live container's `user-lib/modules/*.modl` and compare to the `version` field shown in the gateway UI — if they disagree, you're hitting the cache-shadowing pattern.
+
+**`docker compose down -v` is destructive — it wipes the gateway DB.** That's fine for Edge IPCs where the DB content is reproducible from `services/config/resources/` (file-based VCS config) and `services/projects/`, but never run `down -v` on a gateway whose DB holds state you can't recreate (manually-configured GAN connections, custom user accounts, runtime-only tag values).
+
+For a multi-IPC fleet, this becomes a sequenced rolling upgrade rather than a `git push`. Worth wrapping in a script or runbook.
+
+---
+
+### Troubleshooting Rule: 2026-05-08 (seeded manually)
+
+**Windows PowerShell 5.1 (the default `powershell.exe` on Windows 10 / 11) doesn't reliably handle UTF-8 source files without a BOM. Keep `.ps1` scripts ASCII-only.**
+
+Symptom: a `.ps1` that parses fine on PowerShell 7 dies on 5.1 with errors like:
+
+```
+Missing closing '}' in statement block or type definition.
+```
+
+…pointing at code that visually has matched braces.
+
+Root cause: any non-ASCII character (em dash `—`, en dash `–`, smart quotes `"` `'`, ellipsis `…`) in the script is decoded as Windows-1252 instead of UTF-8 when the file lacks a BOM. The mis-decoded bytes shift the tokenizer's view of subsequent characters, producing seemingly nonsensical brace errors several lines downstream from the actual offending byte.
+
+Fix: replace non-ASCII output strings with ASCII (`-` for em dash, `"` for smart quotes). No special tooling needed; just don't paste from word processors / docs that auto-substitute.
+
+This bites our `run-*.ps1` wrappers because the `Write` tool that generated them outputs plain UTF-8. PowerShell 7+ handles it; 5.1 doesn't. Until the user base is on 7+, all PowerShell scripts in this repo should be ASCII-only and use Allman-style brace placement (`}\nelse {` not `} else {`) to avoid further parser confusion if any non-ASCII slips in.
+
+---
+
+### Optimization Strategy: 2026-05-08 (seeded manually)
+
+**For per-IPC values that need to land in a tracked config file at deploy time, use a deploy-time rewrite script. Don't try to make the file dynamic in git.**
+
+`services/config/resources/.../transmitter/<name>/config.json` has an `edgeNodeId` field that should be unique per IPC (the Cirrus Link broker identifies edge gateways via the `groupId/edgeNodeId/deviceId` triple). Three approaches considered:
+
+1. **Per-IPC branch.** Each IPC pulls its own branch with its own committed `config.json`. Heavy maintenance burden, doesn't scale.
+2. **Placeholder + envsubst.** File has `__HOSTNAME__` in git; deploy script substitutes. Simple but the file in git no longer parses as JSON, and IDE tooling (jq, json-schema validators) chokes.
+3. **Deploy-time rewrite.** File in git has a placeholder *value* (`"edgeNodeId": "Edgenode93"`); deploy script uses `jq` to overwrite `.edgeNodeId` to the IPC's hostname before `docker compose up`.
+
+We chose (3). Implementation: `scripts/configure-transmitter.sh` walks every transmitter `config.json`, sets `.edgeNodeId` to `${IGN_NAME:-$(hostname)}`. Wired into `deploy.yml` between `Write runtime .env` and `Restart Ignition Edge`.
+
+Properties of this pattern:
+
+- **Git file always parses as valid JSON** — no placeholder values, no template syntax. IDE tooling works.
+- **Idempotent.** Running the script twice produces the same result. Re-deploys reset the file to the committed state via `actions/checkout`, then re-apply the dynamic value — no drift.
+- **Generalizable.** Same pattern works for any field that needs a per-IPC value. Add a new entry in the rewrite script; the file in git just holds a default/example value.
+
+When NOT to use this: secrets (those should never live in a file at all — use env vars from Secrets), or values that change at runtime after deploy (those should use Ignition's own config-mode mechanism). For "deploy-time, per-IPC, from a non-secret source like hostname", this is the right shape.
 
 ---
