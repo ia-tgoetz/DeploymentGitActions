@@ -100,6 +100,15 @@ jobs:
           # hostname AND the runner's hostname label. No more hostname-vs-secret
           # reconciliation logic needed in the fleet model.
           IGN_NAME="${{ matrix.ipc }}"
+          # Match the container's IGNITION_UID/GID to the runner user's
+          # UID/GID. Without this, the container chowns bind-mounted dirs
+          # (services/projects, services/config/resources) to UID 1000 on
+          # the host, and the next workflow's checkout step fails to clean
+          # the workspace with EACCES on the now-foreign-owned files.
+          # github-runner is typically UID 999 (system user); use its actual
+          # values rather than hard-coding.
+          RUNNER_UID=$(id -u)
+          RUNNER_GID=$(id -g)
           # Source GAN config (host, port, SSL flags, etc.) so it can flow
           # into docker-compose's GATEWAY_NETWORK_0_* env vars on first boot.
           if [ -f config/central-gateway.env ]; then
@@ -110,8 +119,8 @@ jobs:
           IGNITION_IMAGE=ghcr.io/${{ github.repository_owner }}/ignition-edge
           IGN_NAME=${IGN_NAME}
           IGN_MODE=prod
-          IGN_UID=1000
-          IGN_GID=1000
+          IGN_UID=${RUNNER_UID}
+          IGN_GID=${RUNNER_GID}
           TZ=America/Chicago
           IGN_MAX_HEAP=2048
           IGN_MEM_LIMIT=4g

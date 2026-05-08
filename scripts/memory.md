@@ -523,3 +523,53 @@ For the 5000-site Chevron fleet target, fix this in the template. Per-host resiz
 When this is NOT the issue: if `vgs` shows `VFree 0` and `df -h /` still reports 100% used, the disk really is full — clean up apt cache (`apt-get clean`), journald (`journalctl --vacuum-size=200M`), or expand the underlying VM disk in Proxmox itself.
 
 ---
+
+### Troubleshooting Rule: 2026-05-08 (seeded manually)
+
+**When a self-hosted runner deploys a Docker container with bind mounts, the container's effective UID must match the runner user's UID — otherwise the next workflow's `actions/checkout@v4` cleanup step hits EACCES on bind-mounted files and the run cascades to total failure.**
+
+Symptom — the failed run shows `actions/checkout@v4` failing with:
+
+```
+Deleting the contents of '/opt/actions-runner/_work/.../DeploymentGitActions'
+Error: File was unable to be removed Error: EACCES: permission denied,
+  unlink '/opt/actions-runner/_work/.../services/projects/.gitkeep'
+```
+
+…and every subsequent step fails because the workspace is empty (no `scripts/requirements.txt`, no `.git`, etc.).
+
+Root cause — the IA Ignition image runs as `user: 0:0` (root) and the entrypoint reads `IGNITION_UID` / `IGNITION_GID` env vars to chown the data directories. Those data dirs include the **bind-mounted host paths** (`services/projects/`, `services/config/resources/`, etc., declared in docker-compose.yml under `volumes:`). After the container has run, those host directories are owned by `IGNITION_UID` on the host filesystem.
+
+If `IGNITION_UID` (default: 1000) doesn't match the runner user's UID (github-runner is typically UID 999, a system user), the runner cannot unlink files in the chowned directories. The next workflow's checkout step starts by trying to clean the workspace and immediately fails on EACCES.
+
+The deploy step only writes a few files into the bind mounts on each run, but `actions/checkout@v4`'s default cleanup tries to remove EVERYTHING in the workspace. So even files that were never in the bind mount fail to delete because the bind-mounted subdirs can't be entered.
+
+Fix — match the container's `IGNITION_UID/GID` to the runner user's UID/GID at deploy time:
+
+```yaml
+- name: Write runtime .env
+  run: |
+    IGN_UID=$(id -u)   # the runner-user UID, since this step runs as github-runner
+    IGN_GID=$(id -g)
+    cat > .env <<EOF
+    IGN_UID=${IGN_UID}
+    IGN_GID=${IGN_GID}
+    ...
+```
+
+Don't hard-code `IGN_UID=1000` — github-runner is created via `useradd --system` in `provision-runner.sh`, which assigns a UID under 1000. Different VMs may have different UIDs (depending on what other system users existed at install time), so derive at runtime.
+
+Recovery on a host that's already in the broken state: stop the container by name (so the bind mount is released), then `sudo rm -rf` the runner's `_work` directory:
+
+```bash
+sudo docker stop <container-name>
+sudo rm -rf /opt/actions-runner/_work/<repo>/<repo>
+```
+
+The next workflow recreates the workspace from scratch via `actions/checkout@v4`.
+
+Don't `user: <runner-uid>:<runner-gid>` in the compose file — the IA entrypoint needs to start as root to do the chown, then drops privileges. Override `user:` and the chown step fails with permission errors. Stick with `user: 0:0` and control the destination UID via the env vars.
+
+When this isn't the issue: if checkout works but a later step fails on bind-mount permissions, the runner UID may have CHANGED since the last deploy (rare — usually only happens after manual user-management or VM recreation). Same fix; same recovery path.
+
+---
