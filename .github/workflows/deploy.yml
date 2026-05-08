@@ -166,26 +166,37 @@ jobs:
       - name: Commit agent memory if changed
         if: always()
         run: |
-          if ! git diff --quiet -- scripts/memory.md 2>/dev/null; then
-            echo "Agent recorded a new lesson on ${{ matrix.ipc }} — committing."
-            git config --local user.name "Claude DevOps Agent"
-            git config --local user.email "noreply@anthropic.com"
-            git add scripts/memory.md
-            git commit -m "docs: agent lesson from ${{ matrix.ipc }} [skip ci]"
-            # Multiple matrix jobs can hit this step concurrently. Retry with
-            # rebase to handle the race when two IPCs both write a lesson.
-            for attempt in 1 2 3 4 5; do
-              if git push; then
-                echo "Pushed (attempt $attempt)."
-                break
-              fi
-              echo "Push rejected, rebasing and retrying ($attempt/5)..."
-              git pull --rebase origin main || true
-              sleep $((RANDOM % 5 + 1))
-            done
-          else
-            echo "No memory changes to commit."
+          # Bail early if checkout never happened (e.g. an earlier step like
+          # Verify Docker access failed before the repo was on disk). Without
+          # this guard, `git config --local` errors fatally and masks the
+          # real failure further up the workflow.
+          if [[ ! -d .git ]]; then
+            echo "No .git in workspace — checkout never ran. Skipping memory commit."
+            exit 0
           fi
+          # `git diff --quiet` returns non-zero both when there are changes
+          # AND when something is wrong (e.g. corrupted index). Use a precise
+          # check via `git status --porcelain` instead.
+          if [[ -z "$(git status --porcelain -- scripts/memory.md)" ]]; then
+            echo "No memory changes to commit."
+            exit 0
+          fi
+          echo "Agent recorded a new lesson on ${{ matrix.ipc }} — committing."
+          git config --local user.name "Claude DevOps Agent"
+          git config --local user.email "noreply@anthropic.com"
+          git add scripts/memory.md
+          git commit -m "docs: agent lesson from ${{ matrix.ipc }} [skip ci]"
+          # Multiple matrix jobs can hit this step concurrently. Retry with
+          # rebase to handle the race when two IPCs both write a lesson.
+          for attempt in 1 2 3 4 5; do
+            if git push; then
+              echo "Pushed (attempt $attempt)."
+              break
+            fi
+            echo "Push rejected, rebasing and retrying ($attempt/5)..."
+            git pull --rebase origin main || true
+            sleep $((RANDOM % 5 + 1))
+          done
 
       - name: Clean up secrets
         if: always()
