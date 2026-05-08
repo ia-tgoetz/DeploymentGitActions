@@ -573,3 +573,62 @@ Don't `user: <runner-uid>:<runner-gid>` in the compose file — the IA entrypoin
 When this isn't the issue: if checkout works but a later step fails on bind-mount permissions, the runner UID may have CHANGED since the last deploy (rare — usually only happens after manual user-management or VM recreation). Same fix; same recovery path.
 
 ---
+
+### Troubleshooting Rule: 2026-05-08 (seeded manually)
+
+**Docker named volumes with bind options freeze the resolved absolute path at volume-creation time. Moving the compose project (e.g. relocating the runner from `/home/<user>/actions-runner` to `/opt/actions-runner`) breaks every subsequent `compose up` until you delete and recreate the volumes.**
+
+Symptom — `compose up` fails with:
+
+```
+Error response from daemon: failed to populate volume:
+  error while mounting volume '/var/lib/docker/volumes/<project>_<volume>/_data':
+  failed to mount local volume:
+  mount /home/<old-user>/actions-runner/_work/<repo>/<repo>/services/config/resources:
+        /var/lib/docker/volumes/<project>_<volume>/_data,
+  flags: 0x1000: no such file or directory
+```
+
+…even when the workspace is now at a completely different path. Compose also prints:
+
+```
+Volume "<project>_<volume>" exists but doesn't match configuration in compose file. Recreate (data will be lost)?
+```
+
+Root cause — when a named volume is declared with `driver_opts: type: none, device: <relative-path>, o: bind`, Docker resolves `<relative-path>` to an absolute path AT THE TIME OF FIRST `up` and stores that absolute path in the volume's metadata under `/var/lib/docker/volumes/<volume>/`. Subsequent `up` invocations look up the volume by NAME, see it already exists, and reuse the cached absolute path — they do NOT re-resolve the relative path against the current working directory.
+
+This is fine in normal operation but bites hard whenever the compose project moves on the host filesystem. For self-hosted Actions runners the trigger is usually:
+
+- Migrating from a manual `~/actions-runner/` install to a system-managed `/opt/actions-runner/`
+- Renaming or recreating the runner work directory
+- Switching the runner user (which changes the home dir)
+
+Fix — delete the stale volumes so they get recreated with the current absolute path on the next `up`:
+
+```bash
+cd /<current-workspace>
+sudo docker compose down -v   # tears down the project AND removes its volumes
+sudo docker compose up -d     # recreates volumes with the current path
+```
+
+For volumes that bind to repo files (`services/config/resources/`, `services/projects/`), `down -v` is safe — the actual data lives in the bind-mount target (the repo files on disk), not the volume metadata. The volume is essentially a thin pointer; deleting it doesn't lose data.
+
+For volumes that hold actual Docker state (e.g. `ignition-data` holding the gateway DB), `down -v` is destructive. If you need to preserve that one, target the bind-mount volumes specifically:
+
+```bash
+sudo docker volume rm <project>_<volume>   # only the affected ones
+```
+
+Identify which volumes have stale paths via:
+
+```bash
+sudo docker volume inspect <project>_<volume> | grep -i device
+```
+
+If `Device` shows a path that no longer exists on the host, the volume is stale.
+
+Prevention at fleet scale — pin runners to a stable absolute path from day one (`/opt/actions-runner/`, never user homes), document that as part of the provisioning runbook, and don't hand-migrate. If a host's runner needs to relocate, the volumes for any compose project on that host must be torn down as part of the relocation.
+
+When this isn't the issue: if `compose up` fails with a similar "no such file or directory" but the path in the error matches the CURRENT workspace, the issue is a missing source directory (e.g., `services/config/resources/` was deleted from the repo) — different problem, fix at the file level.
+
+---

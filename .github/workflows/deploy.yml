@@ -167,10 +167,15 @@ jobs:
         run: |
           set -e
           echo "Deploy failed on ${{ matrix.ipc }} — starting Claude agent in venv (PEP 668-safe)..."
-          python3 -m venv /tmp/agent-venv
-          /tmp/agent-venv/bin/pip install --quiet --upgrade pip
-          /tmp/agent-venv/bin/pip install --quiet -r scripts/requirements.txt
-          /tmp/agent-venv/bin/python scripts/deploy_agent.py
+          # Use mktemp -d so we always get a fresh, runner-owned directory.
+          # /tmp/agent-venv (a fixed path) was getting stranded across runs
+          # with foreign ownership when prior deploys ran with a different
+          # IGN_UID, breaking subsequent venv creation with EACCES.
+          AGENT_VENV="$(mktemp -d)/venv"
+          python3 -m venv "$AGENT_VENV"
+          "$AGENT_VENV/bin/pip" install --quiet --upgrade pip
+          "$AGENT_VENV/bin/pip" install --quiet -r scripts/requirements.txt
+          "$AGENT_VENV/bin/python" scripts/deploy_agent.py
 
       - name: Commit agent memory if changed
         if: always()
