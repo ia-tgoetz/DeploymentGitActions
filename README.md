@@ -32,6 +32,8 @@ Automated deployment and configuration sync for Inductive Automation's Ignition 
 ├── services/
 │   ├── config/resources/           # Ignition VCS config (file-based gateway config)
 │   └── projects/                   # Ignition projects
+├── run-build-edge.ps1              # Wrapper: fetch modules.txt, docker build, save to tar (Windows)
+├── run-build-edge.sh               # Wrapper: fetch modules.txt, docker build, save to tar (Linux/macOS)
 ├── run-push-edge.ps1               # Wrapper: loads .env, pushes the prebuilt Edge tar to GHCR (Windows)
 ├── run-push-edge.sh                # Wrapper: loads .env, pushes the prebuilt Edge tar to GHCR (Linux/macOS)
 └── scripts/
@@ -100,27 +102,38 @@ The Build Edge Image workflow run page also prints a verification step showing w
 
 ### 1B — Local-build path (alternative)
 
-Use this when you can't run CI (air-gapped tooling, debugging the build itself, etc.).
+Use this when you can't run CI (air-gapped tooling, debugging the build itself, etc.). Two wrappers handle the full flow from the repo root:
 
 1. **Get a GHCR PAT** with `write:packages` + `read:packages` scopes from <https://github.com/settings/tokens/new>.
 2. **Clone the repo** and copy `.env.example` to `.env`. Set `GHCR_OWNER`, `GHCR_PAT`, and `IGN_RELEASE`.
-3. **Stage `.modl` files** alongside `build/edgeGwBuild/Dockerfile` (the binaries are gitignored).
-4. **Build:**
-   ```bash
-   docker build \
-     -t edge-with-transmission:8.3.6 \
-     --build-arg IGNITION_VERSION=8.3.6 \
-     ./build/edgeGwBuild
+3. **Build the image** — fetches anything missing per `modules.txt`, runs `docker build`, saves the result to `build/edgeGwBuild/edgeWithTransmission.tar`:
+   ```powershell
+   .\run-build-edge.ps1
    ```
-5. **(Optional) Save to tar** if you want a sideband artifact: `docker save edge-with-transmission:8.3.6 -o build/edgeGwBuild/edgeWithTransmission.tar`
-6. **Push:**
+   ```bash
+   bash run-build-edge.sh
+   ```
+4. **Push to GHCR** — loads the tar, tags it as `ignition-edge:${IGN_RELEASE}`, pushes:
    ```powershell
    .\run-push-edge.ps1
    ```
    ```bash
    bash run-push-edge.sh
    ```
-   These wrappers load `.env` then call `scripts/push-image-to-ghcr.{ps1,sh}` against the staged tar with destination tag `ignition-edge:${IGN_RELEASE}`.
+
+The build wrapper skips re-downloading any `.modl` already present in `build/edgeGwBuild/`. To force a refresh, delete the local file and re-run.
+
+If you prefer to drive `docker build` and `docker push` directly without the wrappers, the equivalent is:
+
+```bash
+docker build \
+  -t edge-with-transmission:8.3.6 \
+  --build-arg IGNITION_VERSION=8.3.6 \
+  ./build/edgeGwBuild
+
+GHCR_OWNER=ia-tgoetz GHCR_PAT=<token> \
+  bash scripts/push-image-to-ghcr.sh edge-with-transmission:8.3.6 ignition-edge:8.3.6
+```
 
 ### 1C — First-time GHCR package setup
 
