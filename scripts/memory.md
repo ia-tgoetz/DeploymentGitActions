@@ -477,3 +477,49 @@ When NOT to use the matrix pattern:
 For 5000+ IPC fleets the matrix approach hits GitHub's per-job concurrency limits and the `fleet.txt` file becomes a merge-conflict hotspot. At that scale, swap the static file for a runtime API call against your runner registry, batch deploys into smaller chunks (e.g., 50 at a time), and consider a job orchestrator outside Actions entirely. But for tens to low hundreds of IPCs, this pattern works.
 
 ---
+
+### Troubleshooting Rule: 2026-05-08 (seeded manually)
+
+**Ubuntu Server's installer allocates only ~50% of the disk to the root LV by default. Every fresh VM provisioned from a stock Ubuntu / Proxmox template needs `lvextend` + `resize2fs` to use the disk it was actually given.**
+
+Symptom: an Ignition Edge container fails first-boot init with:
+
+```
+The Ignition Gateway has failed to successfully start.
+Reason: java.nio.file.FileSystemException: /usr/local/bin/ignition/data/var/ignition/designer:
+  No space left on device.
+```
+
+Or any of the equivalent "no space" complaints from the JVM, the Wrapper, or `apt-get`. `df -h /` shows 100% used; `du -sh /var/lib/docker` shows Docker is innocently small (a couple of GB out of a 15 GB filesystem).
+
+The disk math doesn't add up because **the OS isn't seeing the full disk**. Ubuntu Server with the default LVM layout takes the smaller of (4 GB, half the disk) for the root LV at install time. The rest stays as `VFree` in the volume group, waiting for someone to run `lvextend`. On a 30 GB Proxmox VM disk, that means a 15 GB root filesystem and 15 GB of unused VG space — and Ignition's install footprint plus a fresh data volume happily fills 15 GB.
+
+Diagnostic:
+
+```bash
+lsblk                              # shows the physical disk size — say 30G
+sudo vgs                           # VFree column reveals the unallocated chunk
+sudo lvs                           # LSize confirms how much the LV actually has
+df -h /                            # what the kernel/userspace see
+```
+
+If `vgs` reports `VFree > 0`, the disk allocation is the problem (not the deploy pipeline, not the image, not Docker). Fix:
+
+```bash
+sudo lvextend -l +100%FREE /dev/ubuntu-vg/ubuntu-lv
+sudo resize2fs /dev/ubuntu-vg/ubuntu-lv
+df -h /                            # confirm — root FS now matches disk size
+```
+
+No reboot needed; ext4 supports online resize. After that, the previously-failed deploy can be retriggered and Ignition's first-boot init has room to extract its modules and write its DB.
+
+The fix becomes part of provisioning, not just troubleshooting. Two ways to bake it in:
+
+1. **In the Proxmox template build:** run `lvextend` + `resize2fs` once at template-creation time, then snapshot. Every VM cloned from the template starts with a full-size root LV. This is the right place — provisioning scripts shouldn't have to repeat infrastructure decisions.
+2. **As an early step in `provision-runner.sh`:** detect `VFree > 0` and run the resize automatically. Simpler if you don't control the template, but adds a moving part to a script that should be a no-op on already-correctly-provisioned hosts.
+
+For the 5000-site Chevron fleet target, fix this in the template. Per-host resize commands at 5000-site scale is a script-and-pray pattern; the template should produce VMs that are correct on first boot.
+
+When this is NOT the issue: if `vgs` shows `VFree 0` and `df -h /` still reports 100% used, the disk really is full — clean up apt cache (`apt-get clean`), journald (`journalctl --vacuum-size=200M`), or expand the underlying VM disk in Proxmox itself.
+
+---
