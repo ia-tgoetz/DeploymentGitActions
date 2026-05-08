@@ -30,22 +30,22 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Ensure base Ignition image is available
+      - name: Ensure derived Ignition Edge image is available
         run: bash scripts/load-image.sh 2>&1 | tee load-image-log.txt
         env:
           IGN_RELEASE: "8.3.6"
-          IGNITION_IMAGE: ghcr.io/${{ github.repository_owner }}/ignition
-          IMAGE_TAR_PATH: /opt/ignition-images/ignition-8.3.6.tar
-
-      - name: Fetch third-party modules
-        run: bash scripts/fetch-modules.sh 2>&1 | tee fetch-modules-log.txt
+          # Derived image with MQTT Transmission baked into user-lib/modules.
+          # Built via build/edgeGwBuild/Dockerfile, pushed via
+          # scripts/push-image-to-ghcr.sh. No runtime module fetch needed.
+          IGNITION_IMAGE: ghcr.io/${{ github.repository_owner }}/ignition-edge
+          IMAGE_TAR_PATH: /opt/ignition-images/ignition-edge-8.3.6.tar
 
       - name: Write runtime .env
         run: |
           IGN_NAME="${IGN_NAME_OVERRIDE:-$(hostname | tr '[:upper:]' '[:lower:]')}"
           cat > .env <<EOF
           IGN_RELEASE=8.3.6
-          IGNITION_IMAGE=ghcr.io/${{ github.repository_owner }}/ignition
+          IGNITION_IMAGE=ghcr.io/${{ github.repository_owner }}/ignition-edge
           IGN_NAME=${IGN_NAME}
           IGN_MODE=prod
           IGN_UID=1000
@@ -53,7 +53,6 @@ jobs:
           TZ=America/Chicago
           GATEWAY_ADMIN_USERNAME=${GATEWAY_ADMIN_USERNAME}
           GATEWAY_ADMIN_PASSWORD=${GATEWAY_ADMIN_PASSWORD}
-          GATEWAY_MODULES_ACCEPTED=com.cirruslink.mqtt.transmission.gateway
           ACCEPT_MODULE_LICENSES=com.cirruslink.mqtt.transmission.gateway
           ACCEPT_MODULE_CERTS=com.cirruslink.mqtt.transmission.gateway
           EOF
@@ -102,4 +101,4 @@ jobs:
 
       - name: Clean up secrets
         if: always()
-        run: rm -f .env load-image-log.txt health-check-log.txt fetch-modules-log.txt
+        run: rm -f .env load-image-log.txt health-check-log.txt

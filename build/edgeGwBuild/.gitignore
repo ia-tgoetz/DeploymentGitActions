@@ -1,0 +1,4 @@
+# Don't commit the .modl binary — operators stage it locally before
+# building or pushing. The image baked from this directory is the
+# distribution artifact, not the .modl itself.
+*.modl

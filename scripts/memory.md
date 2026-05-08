@@ -125,6 +125,31 @@ Diagnostic: gateway shows the module is supposed to be there (e.g. via warning a
 
 ---
 
+### Optimization Strategy: 2026-05-08 (seeded manually)
+
+**For fleet-deployed Edge IPCs, bake third-party modules into a derived Docker image at build time. Push to GHCR. IPCs pull. Drop the runtime module mount entirely.**
+
+After exhausting the runtime-mount approaches (external-modules + install JVM flags, user-lib/modules + bind mount), the working pattern in this environment is:
+
+1. `build/edgeGwBuild/Dockerfile` — `FROM inductiveautomation/ignition:8.3.6` + `COPY *.modl /usr/local/bin/ignition/user-lib/modules/`. Build once locally:
+   ```bash
+   docker build -t edge-with-transmission:8.3.6 --build-arg IGNITION_VERSION=8.3.6 ./build/edgeGwBuild
+   ```
+2. `scripts/push-image-to-ghcr.sh` — push (or `docker load` from a tar then push) to `ghcr.io/<owner>/ignition-edge:<tag>`.
+3. `docker-compose.yml` — `image: ghcr.io/<owner>/ignition-edge:8.3.6`. No bind mount for modules. Drop install-flow JVM flags. Keep `ACCEPT_MODULE_LICENSES` and `ACCEPT_MODULE_CERTS` for the modules baked in.
+4. **First-time GHCR access setup:** the new package needs visibility set to private and the deployment repo added to "Manage Actions access" with Read role, otherwise the workflow's `GITHUB_TOKEN` 403s on pull.
+
+Why this is the right pattern at scale:
+
+- **Predictable steady state.** Every IPC pulls the same image. No per-host fetch step, no per-host mount path.
+- **Modules are versioned with the image.** `ignition-edge:8.3.6-mqtt-5.0.3` makes module changes explicit in the image tag and trivial to roll back.
+- **Module-version changes are an explicit operator action**, not an automatic thing that might happen mid-deploy.
+- **Bandwidth at fleet scale.** Docker layer caching means upgrade pulls are tiny (just the changed layers), where a per-IPC `fetch-modules` would re-download the full `.modl` to every site.
+
+When *not* to use this: dev/staging where you're iterating on which modules to include — the runtime-mount approach is faster to iterate on. But for production, bake.
+
+---
+
 ### Troubleshooting Rule: 2026-05-07 (seeded manually)
 
 **`GATEWAY_ADMIN_USERNAME` and `GATEWAY_ADMIN_PASSWORD` env vars are honored ONLY on the first boot of a fresh gateway DB. Changing them after init is a no-op — rotate via the web UI or wipe the named volume.**

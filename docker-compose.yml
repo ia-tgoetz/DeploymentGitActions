@@ -1,6 +1,11 @@
 services:
   ignition-edge:
-    image: ${IGNITION_IMAGE:-ghcr.io/ia-tgoetz/ignition}:${IGN_RELEASE:-8.3.6}
+    # Pre-built derived image with Cirrus Link MQTT Transmission baked into
+    # /usr/local/bin/ignition/user-lib/modules. Built once via
+    # build/edgeGwBuild/Dockerfile and pushed to GHCR by
+    # scripts/push-image-to-ghcr.sh. IPCs pull this; no runtime module mount
+    # or install pipeline needed.
+    image: ${IGNITION_IMAGE:-ghcr.io/ia-tgoetz/ignition-edge}:${IGN_RELEASE:-8.3.6}
     user: 0:0
     container_name: ${IGN_NAME:-ignition-edge}
     restart: unless-stopped
@@ -16,39 +21,22 @@ services:
       GATEWAY_ADMIN_PASSWORD: ${GATEWAY_ADMIN_PASSWORD:?GATEWAY_ADMIN_PASSWORD is required}
       IGNITION_EDITION: edge
       TZ: ${TZ:-America/New_York}
-      # Pre-accept third-party module licenses on first boot.
-      # Module ID is the <id> element from module.xml inside the .modl —
-      # for Cirrus Link MQTT Transmission 5.0.3 that's
-      # com.cirruslink.mqtt.transmission.gateway (the .gateway suffix IS
-      # part of the canonical ID, not just the resource-folder path).
-      GATEWAY_MODULES_ACCEPTED: ${GATEWAY_MODULES_ACCEPTED:-com.cirruslink.mqtt.transmission.gateway}
+      # License/cert acceptance for the modules baked into the image.
+      # Comma-separated, can include multiple module IDs.
       ACCEPT_MODULE_LICENSES: ${ACCEPT_MODULE_LICENSES:-com.cirruslink.mqtt.transmission.gateway}
       ACCEPT_MODULE_CERTS: ${ACCEPT_MODULE_CERTS:-com.cirruslink.mqtt.transmission.gateway}
-    # No -h/-s/-a flags: the container's internal listener is 8088/8043 by
-    # default, and the ports: section above maps them to the host. -h/-s/-a
-    # are only for configuring the gateway's public-facing URL when behind
-    # a reverse proxy or stable DNS.
-    #
-    # Modules: services/modules/ is bind-mounted into user-lib/modules.
-    # Modules placed there are LOADED on every boot (not installed via the
-    # external-modules pipeline) — no unattended/trust-unknown JVM flags
-    # needed, and dependency mismatches surface as visible load errors
-    # rather than silent skips. EULA env vars still apply.
+    # No -h/-s/-a flags: container's internal listener is 8088/8043 by
+    # default; ports: above maps them to the host. Public-address flags
+    # are only for reverse-proxy / DNS scenarios.
     command: >
       -n ${IGN_NAME:-ignition-edge}
       --
       -Dignition.config.mode=${IGN_MODE:-prod}
       -Dignition.license.leased-activation-terminate-sessions-on-shutdown=true
-      -Dignition.allowunsignedmodules=true
     volumes:
       - ignition-data:/usr/local/bin/ignition/data
       - ignition-resources:/usr/local/bin/ignition/data/config/resources
       - ignition-projects:/usr/local/bin/ignition/data/projects
-      # Direct bind mount of services/modules/ into user-lib/modules.
-      # Modules here are loaded at boot rather than going through the
-      # install pipeline. See:
-      # https://www.docs.inductiveautomation.com/docs/8.3/platform/docker-image/docker-image-examples
-      - ./services/modules:/usr/local/bin/ignition/user-lib/modules
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:8088/StatusPing"]
       interval: 30s

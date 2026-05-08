@@ -21,21 +21,26 @@ Automated deployment and configuration sync for Inductive Automation's Ignition 
 ├── docker-compose.yml              # Production: Ignition Edge only
 ├── docker-compose.test.yml         # Adds a central GW container for local GAN testing
 ├── .env.example                    # Template — copy to .env per environment
+├── build/
+│   └── edgeGwBuild/
+│       ├── Dockerfile              # Derived Edge image (base + .modl in user-lib/modules)
+│       └── .gitignore              # Excludes .modl binaries
 ├── config/
 │   └── central-gateway.env         # GAN target details (per site, committed)
 ├── services/
 │   ├── config/resources/           # Ignition VCS config (file-based gateway config)
-│   ├── projects/                   # Ignition projects
-│   └── modules/                    # Third-party .modl files (gitignored, fetched per IPC)
+│   └── projects/                   # Ignition projects
 ├── run-mirror.ps1                  # Wrapper: loads .env then runs mirror (Windows)
 ├── run-mirror.sh                   # Wrapper: loads .env then runs mirror (Linux/macOS)
 └── scripts/
-    ├── mirror-to-ghcr.ps1          # One-time: mirror image into GHCR (Windows)
-    ├── mirror-to-ghcr.sh           # One-time: mirror image into GHCR (Linux/macOS)
-    ├── fetch-modules.ps1           # One-time: download .modl files (Windows)
-    ├── fetch-modules.sh            # One-time: download .modl files (Linux/macOS)
+    ├── mirror-to-ghcr.ps1          # One-time: mirror IA's base image into GHCR (Windows)
+    ├── mirror-to-ghcr.sh           # One-time: mirror IA's base image into GHCR (Linux/macOS)
+    ├── push-image-to-ghcr.ps1      # Push a derived image (tar or local) to GHCR (Windows)
+    ├── push-image-to-ghcr.sh       # Push a derived image (tar or local) to GHCR (Linux/macOS)
+    ├── fetch-modules.ps1           # Optional: download .modl files for a build (Windows)
+    ├── fetch-modules.sh            # Optional: download .modl files for a build (Linux/macOS)
     ├── provision-runner.sh         # One-shot: full IPC provisioning (Docker, UFW, runner)
-    ├── load-image.sh               # IPC: ensure image is available (GHCR or tar)
+    ├── load-image.sh               # IPC: ensure derived image is available (GHCR or tar)
     ├── health-check.sh             # IPC: poll /StatusPing until RUNNING
     ├── configure-gan.sh            # IPC: one-time GAN connection setup
     ├── deploy_agent.py             # Claude agent — runs on deploy failure, investigates, may record a lesson
@@ -210,11 +215,48 @@ After it completes, verify in GitHub: `Settings → Actions → Runners` — the
 > sudo bash scripts/provision-runner.sh <token> custom-runner-name
 > ```
 
-### 3.3 Fetch third-party modules
+### 3.3 Third-party modules — baked into the image
 
-Third-party `.modl` files in `services/modules/` are bind-mounted into `/usr/local/bin/ignition/external-modules/` inside the container, and `docker-compose.yml` sets the JVM flags `-Dignition.gateway.externalModulesFolder=...`, `-Dignition.modules.install.unattended=true`, and `-Dignition.modules.install.trust-unknown-certificates=true` so Ignition auto-installs them on first boot.
+Third-party modules are baked into a **derived Edge image** at build time, not mounted at runtime. The build context is `build/edgeGwBuild/`; the resulting image is pushed to GHCR as `ghcr.io/<owner>/ignition-edge:<version>` and IPCs pull it directly. No runtime `.modl` mount, no install pipeline, no fetch step in the deploy workflow.
 
-> The `user-lib/modules/` path documented in the [IA 8.3 docker-image docs](https://www.docs.inductiveautomation.com/docs/8.3/platform/docker-image/docker-image-examples) is for image-baked "built-in" modules. In our environment, runtime auto-install only worked via the `external-modules` + JVM-flag pattern from IA's `module-dev-ignition` example. See `scripts/memory.md` for the full investigation.
+This is a **one-time-per-module-version** workflow: build the image once when modules change, push to GHCR, and every IPC's next deploy picks up the new image. Steady-state deploys are just a `docker compose pull && up -d` — fast and identical across the fleet.
+
+#### One-time setup (when adding/upgrading a module)
+
+1. Place the `.modl` file alongside `build/edgeGwBuild/Dockerfile`:
+   ```bash
+   cp /path/to/MQTT-Transmission-signed.modl build/edgeGwBuild/
+   ```
+2. Build the derived image locally:
+   ```bash
+   docker build \
+     -t edge-with-transmission:8.3.6 \
+     --build-arg IGNITION_VERSION=8.3.6 \
+     ./build/edgeGwBuild
+   ```
+3. Push to GHCR (uses the same `GHCR_OWNER` / `GHCR_PAT` env vars as `mirror-to-ghcr.sh`):
+   ```bash
+   GHCR_OWNER=ia-tgoetz GHCR_PAT=<token> \
+     bash scripts/push-image-to-ghcr.sh edge-with-transmission:8.3.6 ignition-edge:8.3.6
+   ```
+   Or to push an existing tar:
+   ```bash
+   GHCR_OWNER=ia-tgoetz GHCR_PAT=<token> \
+     bash scripts/push-image-to-ghcr.sh /path/to/edgeWithTransmission.tar ignition-edge:8.3.6
+   ```
+4. **First-time only — make the new GHCR package accessible:**
+   - Visit <https://github.com/users/ia-tgoetz/packages/container/ignition-edge/settings>
+   - **Change visibility → Private**
+   - **Manage Actions access → Add Repository → DeploymentGitActions → Read**
+
+After the package exists in GHCR with the right access, IPCs pull it on every deploy via the runner's `GITHUB_TOKEN`. License/cert acceptance is still controlled by the `ACCEPT_MODULE_LICENSES` and `ACCEPT_MODULE_CERTS` env vars in `.env.example` and the deploy workflow.
+
+#### Adding a new module to the bundle
+
+1. Update `build/edgeGwBuild/Dockerfile` to `COPY` the additional `.modl`
+2. Rebuild and push (steps 1–3 above)
+3. Append the new module's ID to `ACCEPT_MODULE_LICENSES` and `ACCEPT_MODULE_CERTS` in `.env.example` and `.github/workflows/deploy.yml`'s `.env` write step
+4. Push to `main` — the next deploy picks up the new image and the new env vars together
 
 The `.modl` binaries themselves are gitignored — they live alongside the repo on each IPC, not in Git. The deploy workflow runs `fetch-modules.sh` automatically before each restart, but you can also run it manually:
 
