@@ -1,13 +1,13 @@
 # Ignition 8.3 Edge — Automated Deployment
 
-Automated deployment and configuration sync for Inductive Automation's Ignition 8.3 Edge on field Industrial PCs (IPCs), driven by GitHub Actions and a private GHCR-hosted Docker image.
+Automated deployment and configuration sync for Inductive Automation's Ignition 8.3 Edge on field Industrial PCs (IPCs), driven by GitHub Actions and a private GHCR-hosted Docker image with third-party modules baked in.
 
 ## How it works
 
-1. **Image source:** the Ignition image is mirrored from Docker Hub into your private GitHub Container Registry once. IPCs only ever pull from `ghcr.io/<owner>/ignition:<version>`, never from public registries.
+1. **Image source:** a **derived Edge image** is built once from `build/edgeGwBuild/Dockerfile` (extends IA's base image and `COPY`s third-party `.modl` files into `user-lib/modules`). It's pushed to your private GHCR as `ghcr.io/<owner>/ignition-edge:<version>`. IPCs only ever pull from there — never from public registries, and never with a runtime `.modl` mount.
 2. **Runner:** each IPC runs a self-hosted GitHub Actions runner registered against this repo (provisioned in one shot via `scripts/provision-runner.sh`).
 3. **Trigger:** any push to `main` triggers `.github/workflows/deploy.yml`.
-4. **Sync:** the runner pulls the latest repo, writes a runtime `.env` from Secrets + the IPC hostname, then `docker compose down && up -d` with a health-check wait.
+4. **Sync:** the runner pulls the derived image, writes a runtime `.env` from Secrets + the IPC hostname, then `docker compose down && up -d` with a health-check wait.
 5. **Config-as-code:** Ignition projects and the file-based VCS config live in `services/projects/` and `services/config/resources/`, bind-mounted into the container.
 6. **Gateway naming:** each IPC's Ignition gateway name automatically inherits the host's `hostname`, so the central GW's GAN view shows fleet members by IPC identity. Override with the `IGN_NAME` repo Secret if you need a custom name.
 
@@ -30,15 +30,17 @@ Automated deployment and configuration sync for Inductive Automation's Ignition 
 ├── services/
 │   ├── config/resources/           # Ignition VCS config (file-based gateway config)
 │   └── projects/                   # Ignition projects
-├── run-mirror.ps1                  # Wrapper: loads .env then runs mirror (Windows)
-├── run-mirror.sh                   # Wrapper: loads .env then runs mirror (Linux/macOS)
+├── run-push-edge.ps1               # Wrapper: loads .env, pushes the prebuilt Edge tar to GHCR (Windows)
+├── run-push-edge.sh                # Wrapper: loads .env, pushes the prebuilt Edge tar to GHCR (Linux/macOS)
+├── run-mirror.ps1                  # Wrapper: mirrors IA's BASE image into GHCR (rarely needed)
+├── run-mirror.sh                   # Wrapper: mirrors IA's BASE image into GHCR (rarely needed)
 └── scripts/
-    ├── mirror-to-ghcr.ps1          # One-time: mirror IA's base image into GHCR (Windows)
-    ├── mirror-to-ghcr.sh           # One-time: mirror IA's base image into GHCR (Linux/macOS)
     ├── push-image-to-ghcr.ps1      # Push a derived image (tar or local) to GHCR (Windows)
     ├── push-image-to-ghcr.sh       # Push a derived image (tar or local) to GHCR (Linux/macOS)
-    ├── fetch-modules.ps1           # Optional: download .modl files for a build (Windows)
-    ├── fetch-modules.sh            # Optional: download .modl files for a build (Linux/macOS)
+    ├── mirror-to-ghcr.ps1          # Mirror IA's base image into GHCR (Windows) — only needed if pulling base directly
+    ├── mirror-to-ghcr.sh           # Mirror IA's base image into GHCR (Linux/macOS) — only needed if pulling base directly
+    ├── fetch-modules.ps1           # Optional helper: download .modl files into build/edgeGwBuild/ before a build
+    ├── fetch-modules.sh            # Optional helper: download .modl files into build/edgeGwBuild/ before a build
     ├── provision-runner.sh         # One-shot: full IPC provisioning (Docker, UFW, runner)
     ├── load-image.sh               # IPC: ensure derived image is available (GHCR or tar)
     ├── health-check.sh             # IPC: poll /StatusPing until RUNNING
@@ -55,15 +57,15 @@ Automated deployment and configuration sync for Inductive Automation's Ignition 
 The compose file splits the image base from the tag:
 
 ```yaml
-image: ${IGNITION_IMAGE:-ghcr.io/ia-tgoetz/ignition}:${IGN_RELEASE:-8.3.6}
+image: ${IGNITION_IMAGE:-ghcr.io/ia-tgoetz/ignition-edge}:${IGN_RELEASE:-8.3.6}
 ```
 
 | Variable | What it holds | Example |
 |---|---|---|
-| `IGNITION_IMAGE` | Registry + repo path (no tag) | `ghcr.io/ia-tgoetz/ignition` |
+| `IGNITION_IMAGE` | Registry + repo path (no tag) | `ghcr.io/ia-tgoetz/ignition-edge` |
 | `IGN_RELEASE` | Version tag only | `8.3.6` |
 
-To bump versions you only change `IGN_RELEASE`. To switch registries (e.g. fall back to Docker Hub for local dev) you only change `IGNITION_IMAGE`.
+To bump versions you only change `IGN_RELEASE` (after rebuilding/repushing the derived image with the new base). To switch registries (e.g. fall back to Docker Hub for local dev) you only change `IGNITION_IMAGE`.
 
 ---
 
@@ -72,12 +74,13 @@ To bump versions you only change `IGN_RELEASE`. To switch registries (e.g. fall 
 - A GitHub repo with **Branch protection on `main`** enabled (the runner has Docker access — protect what executes on it)
 - GHCR enabled on your account/org
 - One Linux IPC (Ubuntu Server 22.04 or 24.04 LTS recommended) with network access to `github.com` and `ghcr.io`
+- A workstation with Docker (Windows / macOS / Linux) for the one-time image build
 
 ---
 
-## Phase 1 — One-time setup on a workstation
+## Phase 1 — Build and push the derived Edge image
 
-This phase mirrors IA's official image into your GHCR. Done once per Ignition version bump.
+This phase is done **once per module-version change** (not every deploy). It runs on a workstation, not the IPC. The result is a private image at `ghcr.io/<owner>/ignition-edge:<version>` with all third-party `.modl` files baked into `user-lib/modules`.
 
 ### 1.1 Create a GitHub Personal Access Token
 
@@ -100,53 +103,79 @@ Open `.env` and fill in at minimum:
 ```
 GHCR_OWNER=ia-tgoetz
 GHCR_PAT=<your-new-token>
+IGN_RELEASE=8.3.6
 ```
 
 `.env` is gitignored, so the PAT stays local.
 
-### 1.3 Run the mirror
+### 1.3 Stage the `.modl` files
 
-The wrapper scripts at the repo root read `.env`, export each variable, and call the platform-appropriate mirror script.
-
-#### Windows (PowerShell)
+Place each third-party `.modl` you want baked in alongside `build/edgeGwBuild/Dockerfile`:
 
 ```powershell
-.\run-mirror.ps1
+copy C:\path\to\MQTT-Transmission-signed.modl build\edgeGwBuild\
 ```
 
-#### Linux / macOS / WSL / Git Bash
+The `.modl` binaries are gitignored — they live alongside the build context but are never committed.
 
-```bash
-bash run-mirror.sh
-```
+### 1.4 Build the derived image
 
-If you'd rather not store the PAT in `.env`, you can set the three variables inline and call the mirror script directly:
+From the repo root:
 
 ```powershell
-# PowerShell
-$env:GHCR_OWNER  = "ia-tgoetz"
-$env:IGN_RELEASE = "8.3.6"
-$env:GHCR_PAT    = "<your-token>"
-.\scripts\mirror-to-ghcr.ps1
+docker build `
+  -t edge-with-transmission:8.3.6 `
+  --build-arg IGNITION_VERSION=8.3.6 `
+  .\build\edgeGwBuild
 ```
 
 ```bash
-# Bash
-GHCR_OWNER=ia-tgoetz IGN_RELEASE=8.3.6 GHCR_PAT=<your-token> \
-  bash scripts/mirror-to-ghcr.sh
+docker build \
+  -t edge-with-transmission:8.3.6 \
+  --build-arg IGNITION_VERSION=8.3.6 \
+  ./build/edgeGwBuild
 ```
 
-### 1.4 Make the GHCR package private
+You can also save it as a tar (useful if you want to inspect it before pushing, or distribute it sideband to air-gapped sites):
 
-Default visibility is public. Lock it down:
+```bash
+docker save edge-with-transmission:8.3.6 -o build/edgeGwBuild/edgeWithTransmission.tar
+```
 
-<https://github.com/users/ia-tgoetz/packages/container/ignition/settings> → **Change visibility** → **Private**
+### 1.5 Push to GHCR
 
-Then under **Manage Actions access**, add this repository so the workflow's `GITHUB_TOKEN` can pull.
+From the repo root:
+
+```powershell
+.\run-push-edge.ps1            # pushes build\edgeGwBuild\edgeWithTransmission.tar
+```
+
+```bash
+bash run-push-edge.sh           # pushes build/edgeGwBuild/edgeWithTransmission.tar
+```
+
+The wrapper loads `.env`, then calls `scripts/push-image-to-ghcr.{ps1,sh}` against the staged tar with destination tag `ignition-edge:${IGN_RELEASE}`. It prints the GHCR URL when finished.
+
+If you'd rather skip the tar and push the local image directly:
+
+```bash
+GHCR_OWNER=ia-tgoetz GHCR_PAT=<token> \
+  bash scripts/push-image-to-ghcr.sh edge-with-transmission:8.3.6 ignition-edge:8.3.6
+```
+
+### 1.6 Make the new GHCR package accessible
+
+**One time only**, after the first push of a new package:
+
+1. Visit <https://github.com/users/ia-tgoetz/packages/container/ignition-edge/settings>
+2. **Change visibility → Private**
+3. **Manage Actions access → Add Repository → DeploymentGitActions → Read**
+
+Without step 3, the workflow's auto-injected `GITHUB_TOKEN` will 403 when trying to pull.
 
 ---
 
-## Phase 2 — Configure GitHub repository
+## Phase 2 — Configure the GitHub repository
 
 ### 2.1 Add Secrets
 
@@ -185,7 +214,7 @@ A single script handles everything: Docker install, firewall ports, dedicated se
 
 ### 3.2 Run the provisioning script
 
-Clone the repo, then:
+Clone the repo on the IPC, then:
 
 ```bash
 git clone https://github.com/ia-tgoetz/DeploymentGitActions.git
@@ -197,7 +226,7 @@ That's it. The script:
 
 | Step | What it does |
 |---|---|
-| 1 | Installs `curl`, `git`, `jq`, `ufw`, `ca-certificates` |
+| 1 | Installs `curl`, `git`, `jq`, `ufw`, `ca-certificates`, `python3` + `python3-venv` |
 | 2 | Installs Docker via `get.docker.com` (skips if already present) |
 | 3 | Creates the `github-runner` system user (no login shell, in `docker` group) |
 | 4 | Configures UFW: allows `OpenSSH`, then opens Ignition ports `8088`, `8043`, `8060` |
@@ -215,65 +244,7 @@ After it completes, verify in GitHub: `Settings → Actions → Runners` — the
 > sudo bash scripts/provision-runner.sh <token> custom-runner-name
 > ```
 
-### 3.3 Third-party modules — baked into the image
-
-Third-party modules are baked into a **derived Edge image** at build time, not mounted at runtime. The build context is `build/edgeGwBuild/`; the resulting image is pushed to GHCR as `ghcr.io/<owner>/ignition-edge:<version>` and IPCs pull it directly. No runtime `.modl` mount, no install pipeline, no fetch step in the deploy workflow.
-
-This is a **one-time-per-module-version** workflow: build the image once when modules change, push to GHCR, and every IPC's next deploy picks up the new image. Steady-state deploys are just a `docker compose pull && up -d` — fast and identical across the fleet.
-
-#### One-time setup (when adding/upgrading a module)
-
-1. Place the `.modl` file alongside `build/edgeGwBuild/Dockerfile`:
-   ```bash
-   cp /path/to/MQTT-Transmission-signed.modl build/edgeGwBuild/
-   ```
-2. Build the derived image locally:
-   ```bash
-   docker build \
-     -t edge-with-transmission:8.3.6 \
-     --build-arg IGNITION_VERSION=8.3.6 \
-     ./build/edgeGwBuild
-   ```
-3. Push to GHCR (uses the same `GHCR_OWNER` / `GHCR_PAT` env vars as `mirror-to-ghcr.sh`):
-   ```bash
-   GHCR_OWNER=ia-tgoetz GHCR_PAT=<token> \
-     bash scripts/push-image-to-ghcr.sh edge-with-transmission:8.3.6 ignition-edge:8.3.6
-   ```
-   Or to push an existing tar:
-   ```bash
-   GHCR_OWNER=ia-tgoetz GHCR_PAT=<token> \
-     bash scripts/push-image-to-ghcr.sh /path/to/edgeWithTransmission.tar ignition-edge:8.3.6
-   ```
-4. **First-time only — make the new GHCR package accessible:**
-   - Visit <https://github.com/users/ia-tgoetz/packages/container/ignition-edge/settings>
-   - **Change visibility → Private**
-   - **Manage Actions access → Add Repository → DeploymentGitActions → Read**
-
-After the package exists in GHCR with the right access, IPCs pull it on every deploy via the runner's `GITHUB_TOKEN`. License/cert acceptance is still controlled by the `ACCEPT_MODULE_LICENSES` and `ACCEPT_MODULE_CERTS` env vars in `.env.example` and the deploy workflow.
-
-#### Adding a new module to the bundle
-
-1. Update `build/edgeGwBuild/Dockerfile` to `COPY` the additional `.modl`
-2. Rebuild and push (steps 1–3 above)
-3. Append the new module's ID to `ACCEPT_MODULE_LICENSES` and `ACCEPT_MODULE_CERTS` in `.env.example` and `.github/workflows/deploy.yml`'s `.env` write step
-4. Push to `main` — the next deploy picks up the new image and the new env vars together
-
-The `.modl` binaries themselves are gitignored — they live alongside the repo on each IPC, not in Git. The deploy workflow runs `fetch-modules.sh` automatically before each restart, but you can also run it manually:
-
-```bash
-cd ~/path/to/repo
-bash scripts/fetch-modules.sh   # or .\scripts\fetch-modules.ps1 on Windows
-```
-
-Currently configured: **Cirrus Link MQTT Transmission 5.0.3**.
-
-To add another module:
-
-1. Edit the `MODULES` list in `scripts/fetch-modules.sh` / `.ps1`
-2. Append the module's display name **and** package ID to `GATEWAY_MODULES_ACCEPTED`, `ACCEPT_MODULE_LICENSES`, and `ACCEPT_MODULE_CERTS` in `.env.example` and the workflow's `.env` write step. IA's matcher is a case-insensitive substring match against the module's internal name; including both forms means it matches whatever Ignition checks.
-3. Push to `main` — the runner re-fetches and the next container start picks up the new module from the bind mount.
-
-### 3.4 (Optional) Pre-stage the image tar for air-gapped fallback
+### 3.3 (Optional) Pre-stage the image tar for air-gapped fallback
 
 If the IPC may temporarily lose internet, pre-stage a tar so the deploy still works:
 
@@ -281,10 +252,10 @@ If the IPC may temporarily lose internet, pre-stage a tar so the deploy still wo
 sudo mkdir -p /opt/ignition-images
 
 # From a workstation with internet:
-docker pull ghcr.io/ia-tgoetz/ignition:8.3.6
-docker save ghcr.io/ia-tgoetz/ignition:8.3.6 -o ignition-8.3.6.tar
-# scp ignition-8.3.6.tar to the IPC, then:
-sudo mv ignition-8.3.6.tar /opt/ignition-images/
+docker pull ghcr.io/ia-tgoetz/ignition-edge:8.3.6
+docker save ghcr.io/ia-tgoetz/ignition-edge:8.3.6 -o ignition-edge-8.3.6.tar
+# scp ignition-edge-8.3.6.tar to the IPC, then:
+sudo mv ignition-edge-8.3.6.tar /opt/ignition-images/
 ```
 
 `scripts/load-image.sh` tries GHCR first and falls back to this tar automatically.
@@ -297,13 +268,23 @@ Push any change to `main` (or use **Actions → Deploy Ignition Edge → Run wor
 
 1. Verify Docker access
 2. Log in to GHCR using the workflow's `GITHUB_TOKEN`
-3. Pull the image (or load from tar fallback)
+3. Pull `ghcr.io/<owner>/ignition-edge:<version>` (or load from tar fallback)
 4. Write a runtime `.env` from Secrets + repo defaults
 5. `docker compose down --timeout 60 && up -d`
 6. Poll `http://localhost:8088/StatusPing` until it returns `RUNNING`
 7. Clean up the runtime `.env`
 
-Open `http://<ipc-ip>:8088` in a browser to verify. Log in with the admin credentials from the Secrets.
+Open `http://<ipc-ip>:8088` in a browser to verify. Log in with the admin credentials from the Secrets. Check **Config → Modules** — Cirrus Link MQTT Transmission should appear as `Trial / ACTIVE`.
+
+> **First-boot gotcha:** the workflow's restart step runs `docker compose down` (no `-v`), so the named volume `*_ignition-data` persists between deploys. If a previous deploy left the volume in a half-initialized state (failed init loop, partial module install, etc.), boot symptoms include a phantom module entry under Config → Modules with state `default` and a `W [g.ModuleManager]: The file for module ... is missing` log line. Fix: SSH to the IPC and wipe the volume **once** before triggering a fresh deploy:
+>
+> ```bash
+> cd /home/tomg55/actions-runner/_work/DeploymentGitActions/DeploymentGitActions
+> docker compose down -v
+> docker volume ls | grep deploymentgitactions   # should be empty
+> ```
+>
+> Then push a commit to trigger a clean redeploy. This is **only needed if a previous deploy failed**; healthy steady-state deploys reuse the volume so the gateway DB persists across releases.
 
 ---
 
@@ -355,16 +336,32 @@ docker compose -f docker-compose.yml -f docker-compose.test.yml down -v
 
 ## Operations
 
-### Bumping the Ignition version
+### Adding or upgrading a third-party module
 
-1. Update `IGN_RELEASE` in your local `.env`.
-2. Mirror the new tag to GHCR — re-run `.\run-mirror.ps1` (Windows) or `bash run-mirror.sh` (Linux/macOS).
-3. Update `IGN_RELEASE` in `.github/workflows/deploy.yml` and `.env.example`.
+1. Place the new `.modl` in `build/edgeGwBuild/`
+2. Update `build/edgeGwBuild/Dockerfile` if you're adding a new `.modl` (add a `COPY` line)
+3. Append the module ID to `ACCEPT_MODULE_LICENSES` and `ACCEPT_MODULE_CERTS` in `.env.example` and `.github/workflows/deploy.yml`'s `.env` write step
+
+   > Get the canonical module ID from the `.modl` itself:
+   > ```bash
+   > python3 -c "import zipfile; print(zipfile.ZipFile('build/edgeGwBuild/<file>.modl').read('module.xml').decode())"
+   > ```
+   > The `<id>` element is what `ACCEPT_MODULE_*` matches against — not the display name, not the resource-folder path.
+
+4. Rebuild and re-push (Phase 1.4 + 1.5)
+5. Bump the image tag if you want versioning per module-version (e.g. `IGN_RELEASE=8.3.6-mqtt-5.0.4`), then update `IGN_RELEASE` in `.env.example` and `deploy.yml`
+6. Commit and push to `main` — every IPC pulls the new image on its next deploy
+
+### Bumping the Ignition base version
+
+1. Update the `FROM inductiveautomation/ignition:<version>` line in `build/edgeGwBuild/Dockerfile`
+2. Rebuild and push the derived image (Phase 1.4 + 1.5) with the new `IGN_RELEASE`
+3. Update `IGN_RELEASE` in `.env.example` and `.github/workflows/deploy.yml`
 4. Commit and push to `main`. Every IPC will roll forward on its next deploy.
 
 ### Rolling back
 
-Re-tag a known-good version in GHCR or revert the `main` branch commit that bumped the version. Push, and every IPC rolls back.
+Re-tag a known-good image in GHCR (or change `IGN_RELEASE` in `deploy.yml` to a previous tag), commit, push. Every IPC rolls back on the next deploy.
 
 ### Changing the central gateway address
 
@@ -395,7 +392,7 @@ Set `ANTHROPIC_API_KEY` in repo Secrets to enable; the agent silently no-ops if 
 
 ### Adding lessons manually
 
-If the agent isn't running (no API key) but you want to capture a lesson — like the one from the `-h`/`-s` restart-loop incident — append it to `scripts/memory.md` directly. Use the same format the agent uses, so when the agent does come online its `<memory>` context stays consistent:
+If the agent isn't running (no API key) but you want to capture a lesson, append it to `scripts/memory.md` directly. Use the same format the agent uses, so when the agent does come online its `<memory>` context stays consistent:
 
 ```markdown
 ### Troubleshooting Rule: YYYY-MM-DD
@@ -425,29 +422,47 @@ The workflow's `paths-ignore: scripts/memory.md` already prevents memory-only pu
 
 ## Troubleshooting
 
+**Module shows up under Config → Modules but state is `default` (not `Trial`/`ACTIVE`); log warns "The file for module ... is missing"**
+The named volume `*_ignition-data` has stale catalog state from a prior failed boot. Wipe it:
+```bash
+docker compose down -v
+docker volume ls | grep deploymentgitactions   # confirm it's gone
+```
+Then redeploy. See the "First-boot gotcha" callout in Phase 4.
+
 **Runner shows offline in GitHub UI**
 ```bash
 sudo ~/actions-runner/svc.sh status
 sudo journalctl -u actions.runner.* -f
 ```
-
-**Container won't pull from GHCR**
-- Verify the package is shared with the repo: GHCR package settings → **Manage Actions access** → add the repo.
-- Verify `GITHUB_TOKEN` has `packages:read` (granted via `permissions:` block in the workflow).
-
-**Container starts but health check fails**
+Or, if the runner was provisioned via `provision-runner.sh`:
 ```bash
-docker logs ignition-edge --tail 200
-docker exec -it ignition-edge curl -sf http://localhost:8088/StatusPing
+sudo systemctl status 'actions.runner.*'
 ```
 
+**Container won't pull from GHCR (403 Forbidden)**
+- Verify the package is shared with the repo: GHCR package settings → **Manage Actions access** → add `DeploymentGitActions`.
+- Verify `GITHUB_TOKEN` has `packages:read` (granted via `permissions:` block in the workflow).
+
+**Container starts but health check fails for >5 minutes**
+First-boot init takes 3–5 minutes (chown 1600+ files, JVM start, fresh DB init, module load). Health-check timeout is 10 minutes by default. If it still fails:
+```bash
+docker logs <container-name> --tail 200
+docker exec -it <container-name> curl -sf http://localhost:8088/StatusPing
+```
+Look for init-loop signatures (e.g. repeating `Creating init.properties`) — usually a CLI flag mismatch like `-h`/`-s` without `-a`.
+
 **File ownership issues on bind mounts**
-Set `IGN_UID` / `IGN_GID` in `.env` to match the host user that owns `services/`.
+Set `IGN_UID` / `IGN_GID` in `.env` to match the host user that owns `services/`. The compose runs as `user: 0:0` inside the container, so this is rarely an issue in practice.
 
 **PowerShell complains about `VAR=value` syntax**
-That's bash syntax. On Windows use `$env:VAR = "value"` on its own line, then run the script. See Phase 1.3.
+That's bash syntax. On Windows use `$env:VAR = "value"` on its own line, then run the script. See Phase 1.2.
+
+**`./svc.sh: command not found`**
+You ran `svc.sh install` before `config.sh` registered the runner. `svc.sh` is generated by `config.sh`, not extracted from the runner tarball. Run `config.sh` first; see `provision-runner.sh` for the correct sequence.
 
 **Need to wipe state and start fresh**
 ```bash
 docker compose down -v   # -v removes the named volumes (DB, modules, logs)
 ```
+Bind-mounted directories (`services/projects/`, `services/config/resources/`) are unaffected — they're files in the repo, not in volumes.
