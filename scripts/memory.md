@@ -31,23 +31,40 @@ The container will burn CPU restarting indefinitely; the gateway never opens por
 
 ### Troubleshooting Rule: 2026-05-07 (seeded manually)
 
-**For runtime module install in 8.3, use the external-modules pattern, not user-lib/modules.**
+**For runtime module install in 8.3, use a DIRECT bind mount to `external-modules` plus the unattended-install JVM flags. Named-volume-with-bind interferes with the first-boot module scan even when pointed at the same host path.**
 
-We tried two paths for auto-installing the Cirrus Link MQTT Transmission `.modl`:
+Auto-installing the Cirrus Link MQTT Transmission `.modl` failed under two patterns before working:
 
-1. `/usr/local/bin/ignition/user-lib/modules/` (bind mount, no JVM flags) — IA's docs describe this as the path for "built-in" modules. **In our 8.3.6 setup, modules dropped here did not load on first boot.** Whether this is an Edge-specific quirk, a load-order issue, or a docs mismatch is unclear, but multiple deploy attempts with a fresh DB and correctly-set EULA env vars never produced a Loaded module.
+1. `/usr/local/bin/ignition/user-lib/modules/` (bind mount, no flags) — IA's docs describe this as the path for "built-in" modules, but in our 8.3.6 setup nothing loaded from here on first boot.
 
-2. `/usr/local/bin/ignition/external-modules/` (bind mount) plus JVM flags:
-   ```
-   -Dignition.modules.install.unattended=true
-   -Dignition.modules.install.trust-unknown-certificates=true
-   -Dignition.gateway.externalModulesFolder=/usr/local/bin/ignition/external-modules
-   ```
-   This is the pattern from IA's `module-dev-ignition` example (Adam Koch, IA SE). Despite originating in a developer demo, it's what actually triggers auto-install of pre-staged signed modules in our 8.3.6 deployment.
+2. `/usr/local/bin/ignition/external-modules/` mounted via a **named volume with `driver: local`, `o: bind`, `device: services/modules`** — same JVM flags as below. Still didn't trigger install. The named-volume layer between Docker and the host path apparently breaks Ignition's first-boot scan or watch.
 
-**Behavior to expect:** Ignition consumes the `.modl` from the mounted directory during install (it gets moved into the gateway's internal modules store). The host file may disappear after first boot. `fetch-modules.sh` re-downloads on the next deploy if needed; named volumes survive container restarts so re-install only happens on a clean DB.
+The pattern that **does** work is from IA's `module-dev-ignition` example (Adam Koch, IA SE):
 
-The `user-lib/modules/` path is documented in IA's docs but did not work standalone in our environment. The external-modules + JVM flag combination did.
+```yaml
+volumes:
+  - ./services/modules:/usr/local/bin/ignition/external-modules   # DIRECT bind, not named-volume-with-bind
+
+command: >
+  -n <name>
+  --
+  -Dignition.allowunsignedmodules=true
+  -Dignition.modules.install.unattended=true
+  -Dignition.modules.install.trust-unknown-certificates=true
+  -Dignition.gateway.externalModulesFolder=/usr/local/bin/ignition/external-modules
+```
+
+Plus EULA env vars matching the module's display name (case-insensitive substring):
+
+```yaml
+GATEWAY_MODULES_ACCEPTED: "MQTT Transmission,com.cirruslink.mqtt.transmission.gateway"
+ACCEPT_MODULE_LICENSES:   "MQTT Transmission,com.cirruslink.mqtt.transmission.gateway"
+ACCEPT_MODULE_CERTS:      "MQTT Transmission,com.cirruslink.mqtt.transmission.gateway"
+```
+
+**Key takeaway:** for `external-modules`, the bind mount must be a direct `host_path:container_path` entry. Don't use the `driver_opts: type: none, o: bind, device: <path>` named-volume pattern that works fine for `services/projects/` and `services/config/resources/`. Whatever Ignition does to scan that directory at boot is sensitive to the mount type, not just the destination path.
+
+**Behavior to expect:** Ignition consumes the `.modl` from the mounted directory during install (the host file may disappear after first boot). `fetch-modules.sh` re-downloads on the next deploy if needed; named volumes survive container restarts so re-install only happens on a clean DB.
 
 ### Troubleshooting Rule: 2026-05-07 (seeded manually)
 

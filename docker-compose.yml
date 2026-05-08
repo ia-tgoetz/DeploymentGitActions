@@ -38,6 +38,7 @@ services:
       --
       -Dignition.config.mode=${IGN_MODE:-prod}
       -Dignition.license.leased-activation-terminate-sessions-on-shutdown=true
+      -Dignition.allowunsignedmodules=true
       -Dignition.modules.install.unattended=true
       -Dignition.modules.install.trust-unknown-certificates=true
       -Dignition.gateway.externalModulesFolder=/usr/local/bin/ignition/external-modules
@@ -45,7 +46,11 @@ services:
       - ignition-data:/usr/local/bin/ignition/data
       - ignition-resources:/usr/local/bin/ignition/data/config/resources
       - ignition-projects:/usr/local/bin/ignition/data/projects
-      - ignition-modules:/usr/local/bin/ignition/external-modules
+      # Direct bind mount (NOT named-volume-with-bind) — matches the IA
+      # module-dev reference. Named volumes add a layer that interferes
+      # with Ignition's first-boot module scan, even when configured to
+      # point at the same host path.
+      - ./services/modules:/usr/local/bin/ignition/external-modules
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:8088/StatusPing"]
       interval: 30s
@@ -72,10 +77,4 @@ volumes:
     driver_opts:
       type: none
       device: services/projects
-      o: bind
-  ignition-modules:
-    driver: local
-    driver_opts:
-      type: none
-      device: services/modules
       o: bind
