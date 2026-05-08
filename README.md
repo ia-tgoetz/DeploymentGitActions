@@ -174,20 +174,11 @@ Edit `config/central-gateway.env` and fill in the central gateway details for th
 
 A single script handles everything: Docker install, firewall ports, dedicated service user, runner registration, and systemd service. Idempotent — safe to re-run.
 
-### 3.1 (Optional) Set a meaningful hostname
-
-The Ignition gateway name is derived automatically from the IPC's hostname during deploy, so set something descriptive before provisioning:
-
-```bash
-sudo hostnamectl set-hostname edge-site-dallas-01
-exec bash   # reload the shell so $(hostname) reflects the change
-```
-
-### 3.2 Get a one-time runner token
+### 3.1 Get a one-time runner token
 
 `Settings → Actions → Runners → New self-hosted runner` → copy the token (expires in ~1 hour).
 
-### 3.3 Run the provisioning script
+### 3.2 Run the provisioning script
 
 Clone the repo, then:
 
@@ -210,15 +201,17 @@ That's it. The script:
 | 7 | Installs and starts the systemd service running as `github-runner` |
 | 8 | Pre-creates `/opt/ignition-images/` for the optional tar fallback |
 
-After it completes, verify in GitHub: `Settings → Actions → Runners` — the runner should appear as **Idle** with the IPC's hostname.
+After it completes, verify in GitHub: `Settings → Actions → Runners` — the runner should appear as **Idle** with the IPC's existing hostname.
 
-To override the runner name (which becomes the gateway name) at provisioning time:
-
-```bash
-sudo bash scripts/provision-runner.sh <token> custom-runner-name
-```
+> **The script does not change the IPC's hostname.** It reads `$(hostname)` and reuses it as both the runner name and (at deploy time) the Ignition gateway name. Set the hostname through your normal IPC provisioning before running this script (Proxmox template, cloud-init, `hostnamectl`, whatever you prefer).
+>
+> To override the runner name without changing the host's hostname:
+> ```bash
+> sudo bash scripts/provision-runner.sh <token> custom-runner-name
+> ```
 
 ### 3.3 Fetch third-party modules
+
 
 Ignition Edge auto-installs any `.modl` file present in `services/modules/` on first boot, using the env vars in `.env` to pre-accept licenses and certs. The `.modl` binaries are gitignored — they live alongside the repo on each IPC, not inside it.
 
@@ -353,6 +346,34 @@ Safety:
 - Prompt caching is enabled on the system prompt so iteration cost is mostly cache reads after the first call
 
 Set `ANTHROPIC_API_KEY` in repo Secrets to enable; the agent silently no-ops if the key is missing. Memory entries are public — do not edit them by hand to add anything sensitive.
+
+### Adding lessons manually
+
+If the agent isn't running (no API key) but you want to capture a lesson — like the one from the `-h`/`-s` restart-loop incident — append it to `scripts/memory.md` directly. Use the same format the agent uses, so when the agent does come online its `<memory>` context stays consistent:
+
+```markdown
+### Troubleshooting Rule: YYYY-MM-DD
+
+**Short title summarizing the rule.**
+
+Body explaining the symptom, root cause, and fix. Include enough detail
+that a future agent (or human) can recognize the same failure pattern in
+new logs.
+
+---
+```
+
+Use `Troubleshooting Rule:` for bug fixes / failure-recovery patterns, or `Optimization Strategy:` for pipeline / cost / latency improvements. End every entry with `---` on its own line.
+
+Commit with `[skip ci]` in the message so the auto-commit doesn't trigger a deploy:
+
+```bash
+git add scripts/memory.md
+git commit -m "memory: <short description> [skip ci]"
+git push
+```
+
+The workflow's `paths-ignore: scripts/memory.md` already prevents memory-only pushes from triggering a deploy, but the `[skip ci]` is good etiquette for clarity.
 
 ---
 
