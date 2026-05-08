@@ -31,6 +31,13 @@
 
 set -euo pipefail
 
+# Git Bash on Windows mangles arguments that look like POSIX paths
+# (e.g. converts -subj "/CN=edge-fleet" to "C:/Program Files/Git/CN=edge-fleet").
+# These env vars tell MSYS / MSYS2 not to do that for native commands.
+# Harmless no-ops on Linux/macOS.
+export MSYS_NO_PATHCONV=1
+export MSYS2_ARG_CONV_EXCL='*'
+
 PASSWORD="${FLEET_PASSWORD:-changeit}"
 VALID_DAYS="${FLEET_VALID_DAYS:-1825}"
 SUBJECT="${FLEET_SUBJECT:-/CN=edge-fleet}"
