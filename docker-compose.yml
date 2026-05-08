@@ -20,10 +20,14 @@ services:
       GATEWAY_MODULES_ACCEPTED: ${GATEWAY_MODULES_ACCEPTED:-com.cirruslink.mqtt.transmission.gateway}
       ACCEPT_MODULE_LICENSES: ${ACCEPT_MODULE_LICENSES:-com.cirruslink.mqtt.transmission.gateway}
       ACCEPT_MODULE_CERTS: ${ACCEPT_MODULE_CERTS:-com.cirruslink.mqtt.transmission.gateway}
+    # Note: do NOT add -h/-s flags. They configure the gateway's PUBLIC web
+    # address (used in download links, GAN self-identification) and require
+    # a corresponding -a <address>. The internal HTTP/HTTPS listener defaults
+    # to 8088/8043 already; the host port mapping above handles external
+    # access. Only set -h/-s/-a together if this gateway sits behind a
+    # reverse proxy or has a stable DNS name.
     command: >
       -n ${IGN_NAME:-ignition-edge}
-      -h 8088
-      -s 8043
       --
       -Dignition.config.mode=${IGN_MODE:-prod}
       -Dignition.modules.install.unattended=true

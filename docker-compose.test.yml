@@ -25,8 +25,6 @@ services:
       TZ: ${TZ:-America/New_York}
     command: >
       -n ignition-central
-      -h 8088
-      -s 8043
       --
       -Dignition.license.leased-activation-terminate-sessions-on-shutdown=true
     volumes:
