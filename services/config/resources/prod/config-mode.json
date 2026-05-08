@@ -1,6 +1,6 @@
 {
   "title": "prod",
-  "description": "prod for prod system",
+  "description": "prod for Prod system",
   "enabled": true,
   "inheritable": true,
   "parent": "core"
