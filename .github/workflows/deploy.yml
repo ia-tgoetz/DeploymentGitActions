@@ -65,6 +65,13 @@ jobs:
           GATEWAY_ADMIN_USERNAME: ${{ secrets.GATEWAY_ADMIN_USERNAME }}
           GATEWAY_ADMIN_PASSWORD: ${{ secrets.GATEWAY_ADMIN_PASSWORD }}
 
+      - name: Set transmitter edgeNodeId to gateway name
+        run: |
+          IGN_NAME="${IGN_NAME_OVERRIDE:-$(hostname | tr '[:upper:]' '[:lower:]')}"
+          bash scripts/configure-transmitter.sh "$IGN_NAME"
+        env:
+          IGN_NAME_OVERRIDE: ${{ secrets.IGN_NAME }}
+
       - name: Restart Ignition Edge
         run: |
           docker compose down --timeout 60

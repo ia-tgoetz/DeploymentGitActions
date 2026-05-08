@@ -10,6 +10,7 @@ Automated deployment and configuration sync for Inductive Automation's Ignition 
 4. **Sync:** the runner pulls the derived image, writes a runtime `.env` from Secrets + the IPC hostname, then `docker compose down && up -d` with a health-check wait.
 5. **Config-as-code:** Ignition projects and the file-based VCS config live in `services/projects/` and `services/config/resources/`, bind-mounted into the container.
 6. **Gateway naming:** each IPC's Ignition gateway name automatically inherits the host's `hostname`, so the central GW's GAN view shows fleet members by IPC identity. Override with the `IGN_NAME` repo Secret if you need a custom name.
+7. **Transmitter identity:** at deploy time, `scripts/configure-transmitter.sh` rewrites `edgeNodeId` in every Cirrus Link transmitter config under `services/config/resources/.../transmitter/<name>/config.json` to match the gateway name. Each IPC publishes to MQTT under its own edge-node ID without per-site config sprawl.
 
 ---
 
@@ -43,6 +44,7 @@ Automated deployment and configuration sync for Inductive Automation's Ignition 
     ├── load-image.sh               # IPC: ensure derived image is available (GHCR or tar)
     ├── health-check.sh             # IPC: poll /StatusPing until RUNNING
     ├── configure-gan.sh            # IPC: one-time GAN connection setup
+    ├── configure-transmitter.sh    # Deploy-time: rewrites edgeNodeId in every Cirrus Link transmitter config to the IPC's hostname
     ├── deploy_agent.py             # Claude agent — runs on deploy failure, investigates, may record a lesson
     ├── memory.md                   # Persistent agent memory (auto-appended to)
     └── requirements.txt            # Python deps for deploy_agent.py
