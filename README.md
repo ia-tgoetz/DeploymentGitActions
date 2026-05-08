@@ -93,10 +93,10 @@ There are two paths. **CI is the recommended one** — zero hands-on work after 
 | Update the Dockerfile (e.g. new base version) | `build/edgeGwBuild/Dockerfile` | CI rebuilds with the new base |
 | Force a rebuild without changing anything | **Actions → Build Edge Image → Run workflow** | Manual trigger, optional `ignition_version` input |
 
-The workflow runs on a GitHub-hosted runner (`ubuntu-latest`) — your IPC's runner is not used for builds, only deploys. Each successful build pushes two tags:
+The workflow runs on a GitHub-hosted runner (`ubuntu-latest`) — your IPC's runner is not used for builds, only deploys. Each successful build pushes two tags, both mutable:
 
-- `ghcr.io/<owner>/ignition-edge:<IGN_RELEASE>` — mutable, what `deploy.yml` pulls
-- `ghcr.io/<owner>/ignition-edge:<IGN_RELEASE>-<commit-sha>` — immutable, useful for rollback or pinning a single IPC to a known build
+- `ghcr.io/<owner>/ignition-edge:<IGN_RELEASE>` — version-pinned (e.g. `8.3.6`); what `deploy.yml` pulls
+- `ghcr.io/<owner>/ignition-edge:latest` — always the most recent build, regardless of version
 
 The Build Edge Image workflow run page also prints a verification step showing what `.modl` files made it into the published image.
 
@@ -329,10 +329,12 @@ docker compose -f docker-compose.yml -f docker-compose.test.yml down -v
 
 ### Rolling back
 
-Each build publishes both a mutable tag (`<IGN_RELEASE>`) and an immutable tag (`<IGN_RELEASE>-<sha>`). Two ways to roll back:
+Tags are mutable, so rollback works by re-publishing the previous content. Two ways:
 
-- **Quick:** point the deploy workflow at a previous immutable tag — change `IGN_RELEASE=8.3.6` in `deploy.yml` to `IGN_RELEASE=8.3.6-<old-sha>`, commit, push.
-- **Permanent:** revert the commit that triggered the bad build (or re-push the previous good `Dockerfile`/`modules.txt` state). Build Edge Image rebuilds the previous content into the mutable tag.
+- **Revert + rebuild:** revert the commit that triggered the bad build (or re-push the previous `Dockerfile`/`modules.txt` state). Build Edge Image republishes the previous content under `:<IGN_RELEASE>` and `:latest`.
+- **Pin to an earlier digest:** if you've recorded the immutable digest (`sha256:...`) of a previous good build, you can pin `IGN_RELEASE` directly at that digest. The build workflow doesn't push per-commit tags, so this only works if you saved the digest yourself before the bad build.
+
+For quick fleet recovery the revert-and-rebuild path is the right one. If you need true immutable rollback in the future, add `:<IGN_RELEASE>-<short-sha>` back to the workflow's `tags:` list.
 
 ### Changing the central gateway address
 

@@ -12,8 +12,8 @@ name: Build Edge Image
 #     module version but no Dockerfile change is needed.
 #
 # Outputs:
-#   - ghcr.io/<owner>/ignition-edge:<IGN_RELEASE>          (mutable, used by deploys)
-#   - ghcr.io/<owner>/ignition-edge:<IGN_RELEASE>-<short-sha>  (immutable, for traceability) 
+#   - ghcr.io/<owner>/ignition-edge:<IGN_RELEASE>   (version-pinned, used by deploys)
+#   - ghcr.io/<owner>/ignition-edge:latest          (always the most recent build)
 
 on:
   push:
@@ -72,11 +72,10 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Compute build metadata
+      - name: Compute lowercase owner for ghcr.io
         id: meta
         run: |
           echo "lc_owner=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
-          echo "short_sha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
       - name: Build and push
         uses: docker/build-push-action@v5
@@ -85,7 +84,7 @@ jobs:
           push: true
           tags: |
             ghcr.io/${{ steps.meta.outputs.lc_owner }}/ignition-edge:${{ env.IGN_RELEASE }}
-            ghcr.io/${{ steps.meta.outputs.lc_owner }}/ignition-edge:${{ env.IGN_RELEASE }}-${{ steps.meta.outputs.short_sha }}
+            ghcr.io/${{ steps.meta.outputs.lc_owner }}/ignition-edge:latest
           build-args: |
             IGNITION_VERSION=${{ env.IGN_RELEASE }}
           cache-from: type=gha
@@ -105,8 +104,8 @@ jobs:
           {
             echo "## Edge image published"
             echo
-            echo "- \`ghcr.io/${{ steps.meta.outputs.lc_owner }}/ignition-edge:${{ env.IGN_RELEASE }}\` (mutable, picked up by next deploy)"
-            echo "- \`ghcr.io/${{ steps.meta.outputs.lc_owner }}/ignition-edge:${{ env.IGN_RELEASE }}-${{ steps.meta.outputs.short_sha }}\` (immutable, for rollback / traceability)"
+            echo "- \`ghcr.io/${{ steps.meta.outputs.lc_owner }}/ignition-edge:${{ env.IGN_RELEASE }}\` (version-pinned, used by deploys)"
+            echo "- \`ghcr.io/${{ steps.meta.outputs.lc_owner }}/ignition-edge:latest\` (always the most recent build)"
             echo
             echo "**To deploy:** push any commit to main, or run the **Deploy Ignition Edge** workflow."
           } >> "$GITHUB_STEP_SUMMARY"
