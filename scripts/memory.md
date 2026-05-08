@@ -643,3 +643,74 @@ Prevention at fleet scale — pin runners to a stable absolute path from day one
 When this isn't the issue: if `compose up` fails with a similar "no such file or directory" but the path in the error matches the CURRENT workspace, the issue is a missing source directory (e.g., `services/config/resources/` was deleted from the repo) — different problem, fix at the file level.
 
 ---
+
+### Optimization Strategy: 2026-05-08 (seeded manually)
+
+**For Dockerfiles that need to read optional files from the build context (modules, keystores, configs that may or may not be present), use `RUN --mount=type=bind,target=/...,readonly` instead of `COPY . /tmp/...` followed by cleanup. Avoids two real failure modes on Docker Desktop on Windows.**
+
+Symptoms with the COPY-then-cleanup pattern:
+
+1. **Build context bloat.** `COPY . /tmp/build-ctx/` ships the entire build context into a layer. If anything heavy lives in that directory — saved image tarballs, intermediate artifacts, large `.modl` collections — every build re-transfers and re-snapshots gigabytes. We saw `[internal] load build context ... transferring context: 2.14GB` from a `run-build-edge` invocation that left `edgeWithTransmission.tar` next to the Dockerfile.
+
+2. **Cleanup fails with EACCES on Docker Desktop on Windows.** `rm -rf /tmp/build-ctx` errors out with "Permission denied" on the COPY'd files, even though `chown -R` ran successfully in the same RUN (which means we're root). The mechanism is unclear — likely an interaction between Windows file attributes, the WSL2 backend, and how BuildKit snapshots COPY layers on overlayfs — but the symptom is reliable: the build fails on cleanup, leaving the metro-keystore (private key) in the image at `/tmp/build-ctx/`.
+
+The fix replaces both:
+
+```dockerfile
+# syntax=docker/dockerfile:1.6
+ARG IGNITION_VERSION=8.3.6
+FROM inductiveautomation/ignition:${IGNITION_VERSION}
+
+RUN --mount=type=bind,target=/build-ctx,readonly \
+    set -e; \
+    if ls /build-ctx/*.modl >/dev/null 2>&1; then cp /build-ctx/*.modl ...; fi; \
+    if [ -f /build-ctx/metro-keystore ]; then cp /build-ctx/metro-keystore ...; fi; \
+    chown -R ignition:ignition ...
+```
+
+What changes:
+
+- The build context is **mounted** read-only inside the RUN, not copied. No layer is written for the staged files. The mount disappears at the end of the RUN automatically — there's no `/tmp/build-ctx` left in the image at all.
+- BuildKit handles the mount efficiently — only the files actually `cat`'d / `cp`'d from `/build-ctx` are pulled across.
+- The `# syntax=docker/dockerfile:1.6` line at the top opts into BuildKit's mount syntax. Modern Docker Desktop has BuildKit on by default; the syntax directive makes the dependency explicit.
+
+Belt-and-suspenders: **add a `.dockerignore`** in the build-context dir that excludes `*.tar`, `*.tar.gz`, `*.zip`, and other large outputs that shouldn't be inputs. Even with `--mount=type=bind`, BuildKit still reads the build context for the syntax pragma resolution and for any `COPY` instructions, so a fat context still costs IO. `.dockerignore` keeps the context small regardless.
+
+When NOT to use this pattern:
+- **Production multi-arch builds** that need cross-platform reproducibility through a fixed snapshot. The bind-mount happens at build-time on the build host's filesystem; there's no portable layer-cache for it. Usually fine for our use case (local + ubuntu-latest in CI), but multi-arch CI matrices may want explicit COPY layers for cache hits.
+- **Older Docker** without BuildKit. Docker 19.03 needed `DOCKER_BUILDKIT=1`; older versions didn't support it at all. Modern Docker Desktop / Engine 23+ has BuildKit on by default. The syntax pragma also forces BuildKit, so an old client will fail loudly rather than silently produce a busted image.
+
+---
+
+### Troubleshooting Rule: 2026-05-08 (seeded manually)
+
+**Git Bash on Windows mangles arguments that begin with `/` by treating them as POSIX paths and converting them to Windows paths (`C:/Program Files/Git/...`). Set `MSYS_NO_PATHCONV=1` and `MSYS2_ARG_CONV_EXCL='*'` at the top of any bash script that passes flag arguments like `-subj /CN=foo` to native Windows binaries.**
+
+Symptom — running `bash scripts/generate-fleet-cert.sh` on Git Bash on Windows:
+
+```
+req: subject name is expected to be in the format /type0=value0/type1=value1/type2=...
+This name is not in that format: 'C:/Program Files/Git/CN=edge-fleet'
+```
+
+The script passed `-subj /CN=edge-fleet` to openssl. Git Bash's MSYS layer saw `/CN=edge-fleet` start with a slash and "helpfully" rewrote it to `C:/Program Files/Git/CN=edge-fleet` (the path of the Git Bash install) before invoking the native Windows openssl. OpenSSL then rejected the malformed DN.
+
+The fix is two env vars set at script entry:
+
+```bash
+export MSYS_NO_PATHCONV=1       # disables conversion (older MSYS)
+export MSYS2_ARG_CONV_EXCL='*'  # disables conversion (newer MSYS2)
+```
+
+Both are harmless no-ops on Linux/macOS — they're just unset env vars there. On Git Bash and MSYS2 they instruct the runtime to leave path-looking arguments alone.
+
+Affects any bash script that passes:
+- `-subj /CN=...` to openssl
+- `--subject /...` to other certificate / cryptography tools
+- Anything where a `/`-prefixed arg is a flag value, not a path
+
+Doesn't affect arguments that ARE paths (those should still be converted) — but for those, just use Windows-style paths or `cygpath` translations if needed.
+
+For production scripting on Windows, prefer PowerShell — no MSYS layer, no path mangling. Keep bash versions for Linux runners (CI, IPCs) and the cross-platform-friendly subset of operations.
+
+---
