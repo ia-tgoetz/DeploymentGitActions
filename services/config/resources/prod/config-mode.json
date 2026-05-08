@@ -1,6 +1,6 @@
 {
-  "title": "dev",
-  "description": "mode for dev system",
+  "title": "prod",
+  "description": "prod for prod system",
   "enabled": true,
   "inheritable": true,
   "parent": "core"

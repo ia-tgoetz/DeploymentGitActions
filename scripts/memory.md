@@ -70,29 +70,58 @@ ACCEPT_MODULE_CERTS:      "com.cirruslink.mqtt.transmission"
 
 ### Troubleshooting Rule: 2026-05-07 (seeded manually)
 
-**The module ID for `GATEWAY_MODULES_ACCEPTED` is the value of the `<id>` element in the module's `module.xml` — NOT the resource-folder path under `data/config/resources/core/`, NOT the display name shown in the gateway UI.**
+**Always extract the module ID from `module.xml` inside the `.modl` itself. Don't assume it matches the display name, the resource-folder path, or the file name. Sometimes a suffix that looks like a path component (e.g. `.gateway`) IS part of the canonical ID; sometimes it isn't. Only the manifest is authoritative.**
 
-For Cirrus Link MQTT Transmission, the three values look similar but only one matches:
+For Cirrus Link MQTT Transmission 5.0.3, all three of these strings appear in different contexts and look interchangeable, but they're not:
 
-| Source | Value | Works? |
+| Source | Value | Is it the module ID? |
 |---|---|---|
-| `data/config/resources/core/<folder>/` path | `com.cirruslink.mqtt.transmission.gateway` | ❌ — has a `.gateway` suffix added for the resource hierarchy |
-| Gateway UI module name | `MQTT Transmission` | ❌ — display name, not the matchable ID |
-| `module.xml` `<id>` element | `com.cirruslink.mqtt.transmission` | ✅ — the actual module ID |
+| Gateway UI display name | `MQTT Transmission` | No |
+| `data/config/resources/core/<dir>/` resource folder | `com.cirruslink.mqtt.transmission.gateway` | **Yes — happens to match the manifest in this case** |
+| `module.xml` `<id>` element | `com.cirruslink.mqtt.transmission.gateway` | **Yes — authoritative** |
 
-The matcher is documented as a case-insensitive substring match, but in practice the substring of the longer wrong value (`com.cirruslink.mqtt.transmission.gateway`) doesn't reliably match what Ignition is checking against — likely because Ignition compares against the canonical `<id>` and `.gateway` is not part of it.
+The `.gateway` suffix here IS part of the canonical module ID — even though it looks like a path component for the gateway-scope resource folder. This is the kind of thing you can only know by reading the manifest. Other modules may have different conventions.
 
-**To find the authoritative ID for any third-party module:**
+**Always extract from `module.xml`:**
 
-1. The `.modl` file is a zip — extract and read `module.xml`:
-   ```powershell
-   Expand-Archive .\Module-signed.modl -DestinationPath .\modl
-   Select-String -Path .\modl\module.xml -Pattern '<id>'
-   ```
-2. Or check Config → Modules in the gateway UI on a working install — the **Module ID** field is what you want, not the friendly name.
-3. Or read the gateway log on first install: `INFO  [GatewayContext] Loaded module com.cirruslink.mqtt.transmission` — the string after "Loaded module" is the value to use.
+```bash
+# From the host (Linux/macOS, Python is everywhere)
+python3 -c "import zipfile; print(zipfile.ZipFile('path/to/Module-signed.modl').read('module.xml').decode())"
+```
 
-Don't infer the module ID from the resource-folder name. Always extract from `module.xml` or the gateway's own log/UI.
+```powershell
+# Windows
+Expand-Archive .\Module-signed.modl -DestinationPath .\inspect
+Select-String -Path .\inspect\module.xml -Pattern '<id>|<name>|<requiredignitionversion>|<depends'
+```
+
+```bash
+# From inside the running container
+docker exec <container> python3 -c "import zipfile; print(zipfile.ZipFile('/usr/local/bin/ignition/external-modules/Module-signed.modl').read('module.xml').decode())"
+```
+
+Look for `<id>`, `<name>`, `<requiredignitionversion>`, and especially `<depends scope=...>` — the dependency block tells you what other modules must be loaded for this one to install.
+
+---
+
+### Troubleshooting Rule: 2026-05-07 (seeded manually)
+
+**Cirrus Link MQTT Transmission 5.0.3 declares a hard dependency on `com.inductiveautomation.eventstream`. Event Streams isn't available on Ignition Edge, so MQTT Transmission 5.0.3 cannot install on Edge.**
+
+The manifest:
+
+```xml
+<depends scope="DG">com.inductiveautomation.eventstream</depends>
+```
+
+`scope="DG"` means the dependency is required for both **D**esigner and **G**ateway scopes. With the dependency unsatisfied, Ignition's module manager silently skips the install — no log entry, no install attempt. The only downstream symptom is a `W [g.TagProviderManagerImpl]: Unable to update Managed Tag Provider 'MQTT Transmission'` warning if there's pre-staged config that references the missing module.
+
+**For an Edge deployment, do NOT use MQTT Transmission 5.0.3.** Use either:
+
+- An older Cirrus Link version that pre-dates the Event Streams dependency (likely 4.0.x — verify by extracting `module.xml` from each candidate before staging).
+- A future version that drops or makes the dependency optional (check Cirrus Link's release notes).
+
+Diagnostic: gateway shows the module is supposed to be there (e.g. via warning about its tag provider), the `.modl` is in the bind-mounted external-modules folder, all install JVM flags are set correctly, but no `Loading module` / `Started module` messages ever appear → check the manifest's `<depends>` block. Mismatch between dependency and the running edition is the most likely cause.
 
 ---
 
