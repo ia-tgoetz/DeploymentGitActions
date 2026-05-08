@@ -32,15 +32,9 @@ Automated deployment and configuration sync for Inductive Automation's Ignition 
 │   └── projects/                   # Ignition projects
 ├── run-push-edge.ps1               # Wrapper: loads .env, pushes the prebuilt Edge tar to GHCR (Windows)
 ├── run-push-edge.sh                # Wrapper: loads .env, pushes the prebuilt Edge tar to GHCR (Linux/macOS)
-├── run-mirror.ps1                  # Wrapper: mirrors IA's BASE image into GHCR (rarely needed)
-├── run-mirror.sh                   # Wrapper: mirrors IA's BASE image into GHCR (rarely needed)
 └── scripts/
     ├── push-image-to-ghcr.ps1      # Push a derived image (tar or local) to GHCR (Windows)
     ├── push-image-to-ghcr.sh       # Push a derived image (tar or local) to GHCR (Linux/macOS)
-    ├── mirror-to-ghcr.ps1          # Mirror IA's base image into GHCR (Windows) — only needed if pulling base directly
-    ├── mirror-to-ghcr.sh           # Mirror IA's base image into GHCR (Linux/macOS) — only needed if pulling base directly
-    ├── fetch-modules.ps1           # Optional helper: download .modl files into build/edgeGwBuild/ before a build
-    ├── fetch-modules.sh            # Optional helper: download .modl files into build/edgeGwBuild/ before a build
     ├── provision-runner.sh         # One-shot: full IPC provisioning (Docker, UFW, runner)
     ├── load-image.sh               # IPC: ensure derived image is available (GHCR or tar)
     ├── health-check.sh             # IPC: poll /StatusPing until RUNNING
@@ -466,3 +460,44 @@ You ran `svc.sh install` before `config.sh` registered the runner. `svc.sh` is g
 docker compose down -v   # -v removes the named volumes (DB, modules, logs)
 ```
 Bind-mounted directories (`services/projects/`, `services/config/resources/`) are unaffected — they're files in the repo, not in volumes.
+
+---
+
+## Future automation & optimization
+
+Things worth doing once the fleet starts to scale beyond a handful of IPCs:
+
+### Deploy pipeline
+
+- **Auto-build the derived image in CI.** Add a second workflow (`.github/workflows/build-image.yml`) that triggers on changes to `build/edgeGwBuild/**` (Dockerfile or `.modl`) and pushes to GHCR with a tag derived from the commit SHA or a content hash. Removes the manual local build / `run-push-edge` step. Keeps the human out of the per-module-update loop.
+- **Smoke test before publish.** Same workflow brings up `docker-compose.test.yml` against the freshly-built image, polls `/StatusPing`, and verifies the third-party module shows as `Running` via the gateway REST API. Failed smoke = no publish.
+- **Image immutability via content tags.** Instead of mutable `:8.3.6`, push as `:8.3.6-mqtt-5.0.3-<short-sha>` and pin `IGN_RELEASE` per deployed cohort. Mutable tags are convenient until two IPCs disagree on what `:8.3.6` means.
+
+### Edge runtime
+
+- **Container resource limits.** `docker-compose.yml` has no `mem_limit` / `cpus` cap. Add them (e.g. `mem_limit: 4g`, `cpus: 2.0`) so a runaway gateway can't starve the host.
+- **Health-check uses StatusPing JSON parsing.** Current `health-check.sh` greps for the literal string `RUNNING`; if IA changes the response shape it breaks silently. Parse with `jq` and assert on `.state == "RUNNING"`.
+- **GAN auto-configuration.** `scripts/configure-gan.sh` is currently a manual SSH step. Wire it into `deploy.yml` to run if `config/central-gateway.env` has `CENTRAL_GW_HOST` set (skip otherwise). Idempotent: only adds the connection if it doesn't already exist.
+
+### Per-site config at scale
+
+- **Branch-per-site or external config service.** `config/central-gateway.env` works for one or two sites; at 150+ it becomes a merge-conflict farm. Options: branch-per-site (each IPC's runner pulls its own branch), or fetch site-specific config from an external service (Vault, Consul, S3) at deploy time.
+- **Hostname-derived tag/label injection.** The IPC hostname already drives the gateway name; could also drive site/region labels in Ignition, GAN connection naming, and tag prefixes — fewer per-site overrides needed.
+
+### Observability
+
+- **Centralized log aggregation.** Pipe `docker logs` from every IPC to a central Loki / Splunk / CloudWatch endpoint. Structured per-IPC logs make 150-site debugging tractable.
+- **Fleet-wide health dashboard.** Grafana board reading `/StatusPing` and module-state from each IPC. Useful for catching the "gateway boots but a module silently failed" pattern that bit us during initial setup.
+- **Deploy-result webhook.** The workflow already has `if: failure()` for the agent; also send a webhook to Slack/Teams on deploy success/failure for faster human awareness at scale.
+
+### Security & operations
+
+- **Branch protection enforced on `main` for everyone.** Currently configured but admins (you) can bypass. At fleet scale, enforce strictly — every change goes through PR review since the runner executes whatever lands.
+- **Rotate the initial gateway admin password.** `GATEWAY_ADMIN_PASSWORD` only applies on first-DB-init. Document a runbook for password rotation via the gateway REST API once a fleet is live (no `down -v` allowed at that point — would wipe production data).
+- **Backup automation.** Schedule periodic `gwbk` exports from each gateway to a central object store. The current setup has no disaster-recovery story for an IPC that loses its disk.
+- **Fast-rolling tag deployments.** Add a `deploy.yml` input that lets you target a subset of runners by label (e.g. canary 5% of IPCs first). Currently every runner that picks up the workflow runs it.
+
+### Repo hygiene
+
+- **Decide what to do with `services-example/` and `Example Files/`.** They're reference material that informed the current design but aren't used at deploy time. Either move under `docs/reference/` and add a header noting their status, or remove and rely on git history for retrieval.
+- **CI validation of compose / Dockerfile.** Add a workflow that runs `docker compose config` and `hadolint build/edgeGwBuild/Dockerfile` on every PR. Catches typos before they hit a runner.

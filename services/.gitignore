@@ -13,6 +13,3 @@
 
 # Environment variable files
 *.env
-
-# Module binaries — fetched per-IPC via scripts/fetch-modules.sh, not committed
-modules/*.modl
