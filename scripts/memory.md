@@ -417,3 +417,33 @@ The conditional Dockerfile pattern (`RUN ... if [ -f /tmp/build-ctx/fleet-keysto
 When NOT to use this: very small deployments (1-2 IPCs) where per-IPC manual approval is fine, or compliance regimes that mandate per-device unique TLS identity (some industrial security profiles do).
 
 ---
+
+### Optimization Strategy: 2026-05-08 (seeded manually)
+
+**Lock fleet-deployed Edges to outbound-only GAN with mutual TLS. Combine `allowIncoming=false` with `requireSSL=true` + `requireTwoWayAuth=true` + `securityPolicy=ApprovedOnly` for defense-in-depth.**
+
+The settings file `services/config/resources/core/ignition/gateway-network-settings/config.json` is a file-based VCS resource that's loaded on every boot (no first-boot-only quirks like the env-var seeding). For Edges that should never serve as connection targets — i.e., everything in a hub-and-spoke fleet — the right config is:
+
+```json
+{
+  "allowIncoming": false,
+  "requireSSL": true,
+  "requireTwoWayAuth": true,
+  "securityPolicy": "ApprovedOnly"
+}
+```
+
+What each one does:
+
+- **`allowIncoming: false`** — Edge doesn't open a listening GAN port. The container still maps `8060` to the host (compose's `ports:` block), but Ignition won't accept anything on it. Belt-and-suspenders with firewall rules: even if a network mistake exposes 8060, no GAN session can establish.
+- **`requireSSL: true`** — Forbids unencrypted GAN. Important even on "trusted" internal networks, because lateral movement makes plaintext exploitable.
+- **`requireTwoWayAuth: true`** — Both sides present and validate certs during the GAN handshake. The Edge's identity comes from the metro keystore (the fleet keystore, if you're using Option B); the Hub's identity comes from its own GAN cert (which the Edge trusts via the pre-staged `.crt`).
+- **`securityPolicy: ApprovedOnly`** — Even if `allowIncoming` were flipped on later, only explicitly-approved certs would be honored. Useful as a guardrail against config drift.
+
+The combination matters more than any individual setting. `allowIncoming=false` alone wouldn't help if a misconfigured deployment turned it on and accepted a self-signed cert under the default `Unrestricted` policy. `requireSSL=true` alone wouldn't help against a compromised cert. The four together close the surface from every angle.
+
+Why this is in a file-based VCS resource (not env vars or JVM args): unlike `GATEWAY_NETWORK_<idx>_*` (first-boot-only) or `gateway.metroKeystore*` (JVM args, every boot but invisible to operators reviewing the running config), the GAN-settings JSON is the **canonical record** Ignition reads each boot. Operators can audit it via a `cat` on the IPC's bind-mounted file, and changes flow through git-controlled deploys rather than ephemeral env vars.
+
+When NOT to use this posture: a topology where the Edge needs to serve GAN connections (rare for actual Edge IPCs — that's more common for site Edges acting as collector hubs in their own right). In that case, flip `allowIncoming` to `true` and add the originator's cert to `services/pki/trusted/clients/`. Keep `securityPolicy=ApprovedOnly` and the rest as-is.
+
+---

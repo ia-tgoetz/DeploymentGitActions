@@ -28,14 +28,15 @@ Automated deployment and configuration sync for Inductive Automation's Ignition 
 │   └── edgeGwBuild/
 │       ├── Dockerfile              # Derived Edge image (base + .modl in user-lib/modules + optional fleet keystore in etc/)
 │       ├── modules.txt             # URLs of .modl files CI fetches before building
-│       ├── fleet-cert.crt          # (generated) public cert for Hub admin to approve once — committable
+│       ├── fleet-cert.crt          # Public fleet identity cert — committed; Hub admin imports once to trust the whole fleet
 │       └── .gitignore              # Excludes .modl binaries and fleet-keystore.p12 (private key)
 ├── config/
 │   └── central-gateway.env         # GAN target details (per site, committed)
 ├── services/
 │   ├── config/resources/           # Ignition VCS config (file-based gateway config)
 │   ├── projects/                   # Ignition projects
-│   └── pki/trusted/clients/        # Public certs to pre-trust (drop the Hub's .crt here to bypass GAN cert quarantine)
+│   └── pki/trusted/clients/        # Public certs to pre-trust — bind-mounted into Edge's GAN-client trust store
+│       └── engine-demo.chariot.io.crt   # Hub's public GAN cert, pre-staged so first connect skips quarantine
 ├── run-build-edge.ps1              # Wrapper: fetch modules.txt, docker build, save to tar (Windows)
 ├── run-build-edge.sh               # Wrapper: fetch modules.txt, docker build, save to tar (Linux/macOS)
 ├── run-push-edge.ps1               # Wrapper: loads .env, pushes the prebuilt Edge tar to GHCR (Windows)
@@ -322,7 +323,13 @@ Push any change to `main` (or use **Actions → Deploy Ignition Edge → Run wor
 6. Poll `http://localhost:8088/StatusPing` until it returns `RUNNING`
 7. Clean up the runtime `.env`
 
-Open `http://<ipc-ip>:8088` in a browser to verify. Log in with the admin credentials from the Secrets. Check **Config → Modules** — Cirrus Link MQTT Transmission should appear as `Trial / ACTIVE`.
+Open `http://<ipc-ip>:8088` in a browser to verify. Log in with the admin credentials from the Secrets. Quick post-deploy checklist:
+
+| Where | What to see | If wrong |
+|---|---|---|
+| **Config → Modules** | Cirrus Link MQTT Transmission as `Trial / ACTIVE` | See "Module shows up under Config → Modules but state is `default`" in Troubleshooting |
+| **Config → Networking → Gateway Network** | Outgoing connection to the Hub, state `Connected` (not `Quarantined`, not `Disabled`) | Check `services/pki/trusted/clients/` has the Hub's cert; check `config/central-gateway.env` values |
+| **Config → Networking → Gateway Network → Identity** *(if using Option B)* | Cert subject = `CN=edge-fleet` (or whatever you set in `generate-fleet-cert`), not the auto-generated `ip-x.x.x.x:8060` | Data volume holds the old auto-generated cert; SSH to the IPC, `docker compose down -v`, redeploy |
 
 > **First-boot gotcha:** the workflow's restart step runs `docker compose down` (no `-v`), so the named volume `*_ignition-data` persists between deploys. If a previous deploy left the volume in a half-initialized state (failed init loop, partial module install, etc.), boot symptoms include a phantom module entry under Config → Modules with state `default` and a `W [g.ModuleManager]: The file for module ... is missing` log line. Fix: SSH to the IPC and wipe the volume **once** before triggering a fresh deploy:
 >
@@ -357,20 +364,28 @@ These env vars are honored only on the first boot of a fresh gateway DB (same co
 
 ### 5.2 Pre-trusting the Hub's certificate
 
-By default Ignition quarantines the Hub's TLS cert on first connect, requiring an admin to manually approve it via the web UI. To bypass that, drop the Hub's public `.crt` into `services/pki/trusted/clients/`:
+By default Ignition quarantines the Hub's TLS cert on first connect, requiring an admin to manually approve it via the web UI. To bypass that, drop the Hub's public `.crt` into `services/pki/trusted/clients/`. The `engine-demo.chariot.io.crt` is **already committed**, so for that Hub the trust is in place out of the box.
+
+For a different Hub, fetch its public cert via the helper script (no `openssl` needed on Windows):
+
+```powershell
+.\scripts\fetch-server-cert.ps1 my-hub.example.com 8060
+```
+```bash
+bash scripts/fetch-server-cert.sh my-hub.example.com 8060
+```
+
+Output lands at `services/pki/trusted/clients/<hostname>.crt`. Commit it (public certs are not sensitive).
+
+If you'd rather extract by hand:
 
 ```bash
-# Extract the Hub's public cert (run from any host with openssl)
 echo | openssl s_client -connect engine-demo.chariot.io:8060 \
   -servername engine-demo.chariot.io 2>/dev/null \
   | openssl x509 -outform PEM > services/pki/trusted/clients/engine-demo.chariot.io.crt
-
-# Verify
-openssl x509 -in services/pki/trusted/clients/engine-demo.chariot.io.crt \
-  -noout -subject -issuer -dates
 ```
 
-Commit the `.crt` (public certs are not sensitive). The directory is bind-mounted at `/usr/local/bin/ignition/data/config/local/ignition/gateway-network/client/security/pki/trusted/certs/` inside the container — Ignition's GAN-client trust store — so any cert present at first boot is trusted before the GAN connection attempts its initial handshake.
+The directory is bind-mounted at `/usr/local/bin/ignition/data/config/local/ignition/gateway-network/client/security/pki/trusted/certs/` inside the container — Ignition's GAN-client trust store — so any cert present at first boot is trusted before the GAN connection attempts its initial handshake.
 
 ### 5.3 Verify
 
@@ -380,7 +395,20 @@ After the deploy completes, the connection should appear at:
 
 …with state `Connected` (not `Quarantined` and not `Disabled`). If you see `Quarantined` despite the cert being staged, the cert filename or PEM encoding may be off — check `docker logs <container> | grep -i 'pki\|cert\|quarantine'` for the specific complaint.
 
-### 5.4 Manual fallback (legacy)
+### 5.4 Edge GAN security posture (outbound-only)
+
+`services/config/resources/core/ignition/gateway-network-settings/config.json` locks the Edge's GAN to outbound-only with strict authentication:
+
+| Setting | Value | Why |
+|---|---|---|
+| `allowIncoming` | `false` | Edges don't accept dial-ins. Only the Hub initiates outbound; nothing on the Edge listens for incoming GAN. Closes that surface entirely. |
+| `requireSSL` | `true` | All GAN traffic uses TLS — no plaintext fallback even on internal networks. |
+| `requireTwoWayAuth` | `true` | Both sides present and validate certs. The Hub trusts the fleet cert (Phase 1.0); the Edge trusts the Hub via Phase 5.2. |
+| `securityPolicy` | `ApprovedOnly` | Even if `allowIncoming` were ever flipped to `true`, only certs that were explicitly approved would be honored. Defense-in-depth. |
+
+Combined effect: an Edge can only originate a TLS-mutual-auth connection to a Hub it already trusts; nothing else can reach in. If a site requires the Edge to also accept incoming GAN (e.g. for centralized push delivery), flip `allowIncoming` to `true` and add the originator's cert to `services/pki/trusted/clients/`. Otherwise leave it as committed.
+
+### 5.5 Manual fallback (legacy)
 
 If you ever need to add or modify a GAN connection on an already-running gateway without wiping the volume, `scripts/configure-gan.sh` calls Ignition's REST API to do it imperatively. It's no longer the primary path (the env-var seeding handles fresh deploys cleanly) but remains in the repo for ad-hoc per-site adjustments.
 
