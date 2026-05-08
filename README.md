@@ -32,7 +32,8 @@ Automated deployment and configuration sync for Inductive Automation's Ignition 
 │   └── central-gateway.env         # GAN target details (per site, committed)
 ├── services/
 │   ├── config/resources/           # Ignition VCS config (file-based gateway config)
-│   └── projects/                   # Ignition projects
+│   ├── projects/                   # Ignition projects
+│   └── pki/trusted/clients/        # Public certs to pre-trust (drop the Hub's .crt here to bypass GAN cert quarantine)
 ├── run-build-edge.ps1              # Wrapper: fetch modules.txt, docker build, save to tar (Windows)
 ├── run-build-edge.sh               # Wrapper: fetch modules.txt, docker build, save to tar (Linux/macOS)
 ├── run-push-edge.ps1               # Wrapper: loads .env, pushes the prebuilt Edge tar to GHCR (Windows)
@@ -262,25 +263,53 @@ Open `http://<ipc-ip>:8088` in a browser to verify. Log in with the admin creden
 
 ---
 
-## Phase 5 — Configure the Gateway Network connection
+## Phase 5 — Gateway Network outgoing connection
 
-GAN settings live in Ignition's internal database, not in the file-based config, so this step happens once after the central gateway address is known.
+The Edge gateway opens an outgoing GAN connection to the Hub on first boot. Two pieces:
 
-On the IPC:
+### 5.1 Connection parameters
+
+`config/central-gateway.env` defines the connection (host, port, SSL, ping rate). The deploy workflow reads it and exports `GATEWAY_NETWORK_0_*` env vars on the container; Ignition picks them up at first DB-init and creates the connection. Edit per site and commit:
 
 ```bash
-cd ~/path/to/repo
-
-# Make sure config/central-gateway.env is filled in and committed:
-cat config/central-gateway.env
-
-# Source the runtime .env so admin creds are available:
-set -a; source .env; set +a
-
-bash scripts/configure-gan.sh
+# config/central-gateway.env
+GAN_HOST=engine-demo.chariot.io
+GAN_PORT=8060
+GAN_PINGRATE=1000
+GAN_ENABLESSL=true
+GAN_ENABLED=true
 ```
 
-Verify in the gateway UI: `http://<ipc-ip>:8088/web/config/networking.ganconfig`.
+These env vars are honored only on the first boot of a fresh gateway DB (same constraint as `GATEWAY_ADMIN_PASSWORD`). Once the connection exists in the DB, manage further changes via the gateway web UI or wipe the volume to re-seed.
+
+### 5.2 Pre-trusting the Hub's certificate
+
+By default Ignition quarantines the Hub's TLS cert on first connect, requiring an admin to manually approve it via the web UI. To bypass that, drop the Hub's public `.crt` into `services/pki/trusted/clients/`:
+
+```bash
+# Extract the Hub's public cert (run from any host with openssl)
+echo | openssl s_client -connect engine-demo.chariot.io:8060 \
+  -servername engine-demo.chariot.io 2>/dev/null \
+  | openssl x509 -outform PEM > services/pki/trusted/clients/engine-demo.chariot.io.crt
+
+# Verify
+openssl x509 -in services/pki/trusted/clients/engine-demo.chariot.io.crt \
+  -noout -subject -issuer -dates
+```
+
+Commit the `.crt` (public certs are not sensitive). The directory is bind-mounted at `/usr/local/bin/ignition/data/pki/trusted/clients/` inside the container, so any cert present at first boot is trusted before the GAN connection attempts its initial handshake.
+
+### 5.3 Verify
+
+After the deploy completes, the connection should appear at:
+
+`http://<ipc-ip>:8088/web/config/networking.ganconfig`
+
+…with state `Connected` (not `Quarantined` and not `Disabled`). If you see `Quarantined` despite the cert being staged, the cert filename or PEM encoding may be off — check `docker logs <container> | grep -i 'pki\|cert\|quarantine'` for the specific complaint.
+
+### 5.4 Manual fallback (legacy)
+
+If you ever need to add or modify a GAN connection on an already-running gateway without wiping the volume, `scripts/configure-gan.sh` calls Ignition's REST API to do it imperatively. It's no longer the primary path (the env-var seeding handles fresh deploys cleanly) but remains in the repo for ad-hoc per-site adjustments.
 
 ---
 

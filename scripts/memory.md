@@ -339,3 +339,44 @@ Properties of this pattern:
 When NOT to use this: secrets (those should never live in a file at all — use env vars from Secrets), or values that change at runtime after deploy (those should use Ignition's own config-mode mechanism). For "deploy-time, per-IPC, from a non-secret source like hostname", this is the right shape.
 
 ---
+
+### Optimization Strategy: 2026-05-08 (seeded manually)
+
+**For Gateway Network outgoing connections that need TLS, pair `GATEWAY_NETWORK_<idx>_*` env vars with a pre-staged `.crt` in the PKI trust store. Both are first-boot-only mechanisms; together they eliminate the manual cert-quarantine approval step.**
+
+Two complementary pieces in `docker-compose.yml`:
+
+```yaml
+environment:
+  GATEWAY_NETWORK_0_HOST: engine-demo.chariot.io
+  GATEWAY_NETWORK_0_PORT: 8060
+  GATEWAY_NETWORK_0_PINGRATE: 1000
+  GATEWAY_NETWORK_0_ENABLESSL: true
+  GATEWAY_NETWORK_0_ENABLED: true
+volumes:
+  - ./services/pki/trusted/clients:/usr/local/bin/ignition/data/pki/trusted/clients
+```
+
+How it works:
+
+- The `GATEWAY_NETWORK_<idx>_*` env vars are read by IA's image entrypoint on the first DB-init. They seed an outgoing GAN connection in `config.idb`. Subsequent boots ignore the env vars (DB is the source of truth from then on).
+- The bind mount overlays just `data/pki/trusted/clients/` — a subdirectory inside the named volume. Public certs placed there before first boot bypass Ignition's cert-quarantine step. The rest of `data/pki/` (private keys, runtime trust additions via the web UI) goes to the named volume normally.
+
+Why both are required: enabling SSL on the GAN connection without pre-trusting the cert means Ignition flags the connection as `Quarantined` on first attempt, and an admin has to approve the cert via the web UI before traffic flows. Pre-trusting flips it to `Connected` immediately on first boot. For a fleet of headless IPCs, the manual approval step would be a per-site human bottleneck.
+
+Extracting a remote's public cert for trust-on-first-use:
+
+```bash
+echo | openssl s_client -connect <host>:<port> -servername <host> 2>/dev/null \
+  | openssl x509 -outform PEM > services/pki/trusted/clients/<host>.crt
+```
+
+Constraints to remember:
+
+- Both mechanisms are first-boot-only. Re-seeding either one requires `docker compose down -v` (destructive — wipes the gateway DB).
+- `services/pki/trusted/clients/` only contains **public** certs. Never put private keys or PEMs containing private material there.
+- For multiple GAN connections, increment the index: `GATEWAY_NETWORK_1_*`, `GATEWAY_NETWORK_2_*`, etc.
+
+For runtime adjustments to an already-running gateway (post-first-boot), the alternatives are: use the gateway web UI's GAN config page, or call the REST API directly (`scripts/configure-gan.sh` shows the shape).
+
+---

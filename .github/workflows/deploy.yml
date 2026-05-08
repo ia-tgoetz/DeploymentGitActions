@@ -43,6 +43,11 @@ jobs:
       - name: Write runtime .env
         run: |
           IGN_NAME="${IGN_NAME_OVERRIDE:-$(hostname | tr '[:upper:]' '[:lower:]')}"
+          # Source GAN config (host, port, SSL flags, etc.) so it can flow
+          # into docker-compose's GATEWAY_NETWORK_0_* env vars on first boot.
+          if [ -f config/central-gateway.env ]; then
+            set -a; source config/central-gateway.env; set +a
+          fi
           cat > .env <<EOF
           IGN_RELEASE=8.3.6
           IGNITION_IMAGE=ghcr.io/${{ github.repository_owner }}/ignition-edge
@@ -58,6 +63,11 @@ jobs:
           GATEWAY_ADMIN_PASSWORD=${GATEWAY_ADMIN_PASSWORD}
           ACCEPT_MODULE_LICENSES=com.cirruslink.mqtt.transmission.gateway
           ACCEPT_MODULE_CERTS=com.cirruslink.mqtt.transmission.gateway
+          GAN_HOST=${GAN_HOST}
+          GAN_PORT=${GAN_PORT}
+          GAN_PINGRATE=${GAN_PINGRATE}
+          GAN_ENABLESSL=${GAN_ENABLESSL}
+          GAN_ENABLED=${GAN_ENABLED}
           EOF
           chmod 600 .env
         env:
