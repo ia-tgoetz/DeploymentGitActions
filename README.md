@@ -18,7 +18,8 @@ Automated deployment and configuration sync for Inductive Automation's Ignition 
 ```
 .
 ├── .github/workflows/deploy.yml    # CI/CD workflow — runs on every push to main
-├── docker-compose.yml              # Production: Ignition Edge only
+├── Dockerfile                      # Derived image: base GHCR + services/modules/*.modl
+├── docker-compose.yml              # Production: Ignition Edge only (build + run)
 ├── docker-compose.test.yml         # Adds a central GW container for local GAN testing
 ├── .env.example                    # Template — copy to .env per environment
 ├── config/
@@ -212,20 +213,24 @@ After it completes, verify in GitHub: `Settings → Actions → Runners` — the
 
 ### 3.3 Fetch third-party modules
 
+Third-party `.modl` files are baked into a derived Docker image at build time (the IA-recommended pattern for 8.3 — see [docker-image-examples](https://www.docs.inductiveautomation.com/docs/8.3/platform/docker-image/docker-image-examples)). The repo's `Dockerfile` extends the GHCR base image and copies `services/modules/*.modl` into `/usr/local/bin/ignition/user-lib/modules/`, where Ignition loads them automatically on every gateway start.
 
-Ignition Edge auto-installs any `.modl` file present in `services/modules/` on first boot, using the env vars in `.env` to pre-accept licenses and certs. The `.modl` binaries are gitignored — they live alongside the repo on each IPC, not inside it.
-
-Currently configured: **Cirrus Link MQTT Transmission 5.0.3**.
+The `.modl` binaries themselves are gitignored — they live alongside the repo on each IPC, not in Git. The deploy workflow runs `fetch-modules.sh` automatically before each build, but you can also run it manually:
 
 ```bash
-# On the IPC (or workstation):
 cd ~/path/to/repo
 bash scripts/fetch-modules.sh   # or .\scripts\fetch-modules.ps1 on Windows
 ```
 
-This downloads from `files.inductiveautomation.com` once. The resulting `services/modules/MQTT-Transmission-signed.modl` survives `git pull` and `docker compose down` (it's gitignored and a bind mount, not a volume).
+Currently configured: **Cirrus Link MQTT Transmission 5.0.3** (module ID `com.cirruslink.mqtt.transmission.gateway`).
 
-To add another module: edit the `MODULES` list in `scripts/fetch-modules.sh` / `.ps1`, then add the module's display name to `GATEWAY_MODULES_ACCEPTED`, `ACCEPT_MODULE_LICENSES`, and `ACCEPT_MODULE_CERTS` in `.env.example` and the workflow's `.env` write step.
+To add another module:
+
+1. Edit the `MODULES` list in `scripts/fetch-modules.sh` / `.ps1`
+2. Append the module ID (Java package style — find it in the gateway's web UI or the module's documentation) to `GATEWAY_MODULES_ACCEPTED`, `ACCEPT_MODULE_LICENSES`, and `ACCEPT_MODULE_CERTS` in `.env.example` and the workflow's `.env` write step
+3. Push to `main` — the runner re-fetches, rebuilds the derived image, and redeploys
+
+The build is fast: one `COPY` layer over the cached base. It only re-runs when `services/modules/` actually changes.
 
 ### 3.4 (Optional) Pre-stage the image tar for air-gapped fallback
 

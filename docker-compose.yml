@@ -1,6 +1,13 @@
 services:
   ignition-edge:
-    image: ${IGNITION_IMAGE:-ghcr.io/ia-tgoetz/ignition}:${IGN_RELEASE:-8.3.6}
+    # Build a derived image that bakes services/modules/*.modl into
+    # /usr/local/bin/ignition/user-lib/modules. See ./Dockerfile.
+    build:
+      context: .
+      args:
+        BASE_IMAGE: ${IGNITION_IMAGE:-ghcr.io/ia-tgoetz/ignition}
+        IGN_RELEASE: ${IGN_RELEASE:-8.3.6}
+    image: ignition-edge:${IGN_RELEASE:-8.3.6}
     user: 0:0
     container_name: ${IGN_NAME:-ignition-edge}
     restart: unless-stopped
@@ -16,28 +23,24 @@ services:
       GATEWAY_ADMIN_PASSWORD: ${GATEWAY_ADMIN_PASSWORD:?GATEWAY_ADMIN_PASSWORD is required}
       IGNITION_EDITION: edge
       TZ: ${TZ:-America/New_York}
-      # Pre-accept third-party module install on first boot (module ID match)
+      # Pre-accept third-party module licenses on first boot (module ID match).
+      # Modules at user-lib/modules still need EULA acceptance.
       GATEWAY_MODULES_ACCEPTED: ${GATEWAY_MODULES_ACCEPTED:-com.cirruslink.mqtt.transmission.gateway}
       ACCEPT_MODULE_LICENSES: ${ACCEPT_MODULE_LICENSES:-com.cirruslink.mqtt.transmission.gateway}
       ACCEPT_MODULE_CERTS: ${ACCEPT_MODULE_CERTS:-com.cirruslink.mqtt.transmission.gateway}
-    # Note: do NOT add -h/-s flags. They configure the gateway's PUBLIC web
-    # address (used in download links, GAN self-identification) and require
-    # a corresponding -a <address>. The internal HTTP/HTTPS listener defaults
-    # to 8088/8043 already; the host port mapping above handles external
-    # access. Only set -h/-s/-a together if this gateway sits behind a
-    # reverse proxy or has a stable DNS name.
+    # No -h/-s/-a flags: the container's internal listener is 8088/8043 by
+    # default, and the ports: section above maps them to the host. -h/-s/-a
+    # are only for configuring the gateway's public-facing URL when behind
+    # a reverse proxy or stable DNS.
     command: >
       -n ${IGN_NAME:-ignition-edge}
       --
       -Dignition.config.mode=${IGN_MODE:-prod}
-      -Dignition.modules.install.unattended=true
-      -Dignition.gateway.externalModulesFolder=/usr/local/bin/ignition/external-modules
       -Dignition.license.leased-activation-terminate-sessions-on-shutdown=true
     volumes:
       - ignition-data:/usr/local/bin/ignition/data
       - ignition-resources:/usr/local/bin/ignition/data/config/resources
       - ignition-projects:/usr/local/bin/ignition/data/projects
-      - ignition-modules:/usr/local/bin/ignition/external-modules
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:8088/StatusPing"]
       interval: 30s
@@ -64,10 +67,4 @@ volumes:
     driver_opts:
       type: none
       device: services/projects
-      o: bind
-  ignition-modules:
-    driver: local
-    driver_opts:
-      type: none
-      device: services/modules
       o: bind

@@ -28,3 +28,27 @@ The container will burn CPU restarting indefinitely; the gateway never opens por
 **Diagnostic tell:** if `docker logs <gateway>` shows the same `Parsed systemName / Parsed httpPort / Creating init.properties / ERROR: Address not specified` cycle repeating once per minute (with exponential backoff that stretches to ~60s gaps), it's this misconfiguration — not a slow boot.
 
 ---
+
+### Troubleshooting Rule: 2026-05-07 (seeded manually)
+
+**Module bind-mount + `-Dignition.gateway.externalModulesFolder` does NOT auto-install modules in production. Use a derived image with `COPY` to `user-lib/modules/` instead.**
+
+We initially staged third-party `.modl` files in `services/modules/` and bind-mounted that folder to `/usr/local/bin/ignition/external-modules` inside the container, with JVM flags `-Dignition.modules.install.unattended=true` and `-Dignition.gateway.externalModulesFolder=/usr/local/bin/ignition/external-modules`. The module never installed — it just sat there.
+
+That JVM-flag pattern is from IA's **module-development** demo (see Adam Koch's reactflow example). It's intended for developers iterating on their own unsigned modules — not for fleet deployment of signed third-party modules.
+
+**The IA-recommended production pattern for 8.3** (see <https://www.docs.inductiveautomation.com/docs/8.3/platform/docker-image/docker-image-examples>) is to derive a custom image:
+
+```dockerfile
+ARG BASE_IMAGE
+ARG IGN_RELEASE
+FROM ${BASE_IMAGE}:${IGN_RELEASE}
+COPY services/modules/ /usr/local/bin/ignition/user-lib/modules/
+```
+
+Modules placed in `user-lib/modules/` are loaded automatically on every gateway start. They cannot be uninstalled from the web UI — which is the right behavior for fleet-managed sites. EULA acceptance still goes through `GATEWAY_MODULES_ACCEPTED` / `ACCEPT_MODULE_LICENSES` / `ACCEPT_MODULE_CERTS` env vars.
+
+**`/usr/local/bin/ignition/external-modules`** (with the JVM flag) is for the dev workflow.
+**`/usr/local/bin/ignition/user-lib/modules/`** (via Dockerfile COPY) is for production.
+
+---

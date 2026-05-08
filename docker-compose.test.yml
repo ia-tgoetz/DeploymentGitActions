@@ -1,5 +1,5 @@
 # Test overlay — adds a central gateway container alongside Edge for GAN testing.
-# Usage: docker compose -f docker-compose.yml -f docker-compose.test.yml up -d
+# Usage: docker compose -f docker-compose.yml -f docker-compose.test.yml up -d --build
 
 services:
   ignition-edge:
@@ -7,8 +7,16 @@ services:
       ignition-central:
         condition: service_healthy
 
+  # Central gateway uses the same derived image (modules baked in via Dockerfile).
+  # If you don't want modules on the central GW, override image: with the bare
+  # base image: `image: ghcr.io/ia-tgoetz/ignition:8.3.6` (and remove `build:`).
   ignition-central:
-    image: ${IGNITION_IMAGE:-ghcr.io/ia-tgoetz/ignition}:${IGN_RELEASE:-8.3.6}
+    build:
+      context: .
+      args:
+        BASE_IMAGE: ${IGNITION_IMAGE:-ghcr.io/ia-tgoetz/ignition}
+        IGN_RELEASE: ${IGN_RELEASE:-8.3.6}
+    image: ignition-edge:${IGN_RELEASE:-8.3.6}
     user: 0:0
     container_name: ignition-central
     restart: unless-stopped

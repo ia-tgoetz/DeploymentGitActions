@@ -30,12 +30,15 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Ensure Ignition image is loaded
+      - name: Ensure base Ignition image is available
         run: bash scripts/load-image.sh 2>&1 | tee load-image-log.txt
         env:
           IGN_RELEASE: "8.3.6"
           IGNITION_IMAGE: ghcr.io/${{ github.repository_owner }}/ignition
           IMAGE_TAR_PATH: /opt/ignition-images/ignition-8.3.6.tar
+
+      - name: Fetch third-party modules
+        run: bash scripts/fetch-modules.sh 2>&1 | tee fetch-modules-log.txt
 
       - name: Write runtime .env
         run: |
@@ -59,6 +62,9 @@ jobs:
           IGN_NAME_OVERRIDE: ${{ secrets.IGN_NAME }}
           GATEWAY_ADMIN_USERNAME: ${{ secrets.GATEWAY_ADMIN_USERNAME }}
           GATEWAY_ADMIN_PASSWORD: ${{ secrets.GATEWAY_ADMIN_PASSWORD }}
+
+      - name: Build derived image (bakes in .modl files)
+        run: docker compose build
 
       - name: Restart Ignition Edge
         run: |
@@ -99,4 +105,4 @@ jobs:
 
       - name: Clean up secrets
         if: always()
-        run: rm -f .env load-image-log.txt health-check-log.txt
+        run: rm -f .env load-image-log.txt health-check-log.txt fetch-modules-log.txt
