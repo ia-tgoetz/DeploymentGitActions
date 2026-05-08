@@ -38,12 +38,24 @@ services:
     # default; ports: above maps them to the host. Public-address flags
     # are only for reverse-proxy / DNS scenarios.
     # -m sets the JVM max heap in MB; default 2048 is generous for Edge.
+    #
+    # Fleet identity: when fleet-keystore.p12 is baked into the image
+    # (via scripts/generate-fleet-cert + run-build-edge), the
+    # gateway.metroKeystore* JVM args tell Ignition to use it as the
+    # gateway's GAN identity instead of auto-generating a unique one
+    # per IPC. Hub admin approves the one cert; whole fleet works.
+    # If the .p12 is absent in the image, Ignition falls back to its
+    # auto-generated metro keystore.
     command: >
       -n ${IGN_NAME:-ignition-edge}
       -m ${IGN_MAX_HEAP:-2048}
       --
       -Dignition.config.mode=${IGN_MODE:-prod}
       -Dignition.license.leased-activation-terminate-sessions-on-shutdown=true
+      -Dgateway.metroKeystorePath=/usr/local/bin/ignition/etc/fleet-keystore.p12
+      -Dgateway.metroKeystoreType=PKCS12
+      -Dgateway.metroKeystoreAlias=${IGN_FLEET_KEYSTORE_ALIAS:-edge-fleet}
+      -Dgateway.metroKeystorePassword=${IGN_FLEET_KEYSTORE_PASSWORD:-changeit}
     # Container resource limits — protect the IPC host from a runaway
     # gateway. Heap (-m above) is bounded inside this; 4g leaves room
     # for off-heap (DB caches, modules) and OS overhead. Override via

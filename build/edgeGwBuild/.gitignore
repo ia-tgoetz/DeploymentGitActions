@@ -1,4 +1,14 @@
-# Don't commit the .modl binary — operators stage it locally before
-# building or pushing. The image baked from this directory is the
-# distribution artifact, not the .modl itself.
+# Don't commit binaries — operators stage them locally before building
+# or pushing. The image baked from this directory is the distribution
+# artifact, not the source binaries.
 *.modl
+
+# Fleet identity keystore — contains the private key, MUST NOT be committed.
+# Generate via scripts/generate-fleet-cert.{ps1,sh}; distribute via the
+# image (private GHCR) or the FLEET_KEYSTORE_BASE64 GitHub Secret.
+*.p12
+*.pfx
+*.jks
+
+# fleet-cert.crt is intentionally NOT ignored — public certs are safe to
+# commit and convenient to distribute to Hub admins.

@@ -380,3 +380,40 @@ Constraints to remember:
 For runtime adjustments to an already-running gateway (post-first-boot), the alternatives are: use the gateway web UI's GAN config page, or call the REST API directly (`scripts/configure-gan.sh` shows the shape).
 
 ---
+
+### Optimization Strategy: 2026-05-08 (seeded manually)
+
+**For Edge fleets, override Ignition's per-gateway auto-generated metro keystore with a single shared fleet identity keystore. The Hub admin approves one cert; the entire fleet is trusted from then on.**
+
+By default, every Edge generates a unique self-signed cert in its metro keystore on first boot. The Hub then quarantines each one as it dials in, and an admin must approve per IPC via the web UI. At one or two sites this is fine; at 50+ it's a per-site human bottleneck and basically forecloses on full automation.
+
+The fleet-cert pattern collapses N approvals into 1:
+
+1. **Generate one self-signed cert + private key once** (`scripts/generate-fleet-cert.{ps1,sh}`). Defaults: `CN=edge-fleet`, alias `edge-fleet`, password `changeit`, validity 1825 days, RSA 2048.
+2. **Bake the PKCS12 into the image** at `/usr/local/bin/ignition/etc/fleet-keystore.p12`. Note the path is **outside** `/data/` — if you put it inside `/data/`, the named volume shadows it on first boot and Ignition can't find it.
+3. **Tell Ignition to use it as the gateway's GAN identity** via four JVM system properties in `docker-compose.yml`:
+   ```
+   -Dgateway.metroKeystorePath=/usr/local/bin/ignition/etc/fleet-keystore.p12
+   -Dgateway.metroKeystoreType=PKCS12
+   -Dgateway.metroKeystoreAlias=${IGN_FLEET_KEYSTORE_ALIAS:-edge-fleet}
+   -Dgateway.metroKeystorePassword=${IGN_FLEET_KEYSTORE_PASSWORD:-changeit}
+   ```
+   With these set, Ignition uses the supplied keystore as the gateway's GAN identity instead of auto-generating one. Without them (or with the file missing), Ignition silently falls back to its per-IPC auto-generated metro keystore — no error, just per-IPC certs again.
+4. **Hub admin trusts `fleet-cert.crt` once.** Every Edge from then on shows up at the Hub identifying as the same TLS endpoint.
+
+Distribution paths for the `.p12`:
+
+- **Local build:** the keystore lives in `build/edgeGwBuild/fleet-keystore.p12` on the workstation. The Dockerfile picks it up via a conditional `RUN` (so its absence isn't an error). The image is private (GHCR), so the keystore travels inside it to IPCs.
+- **CI build:** base64-encode the `.p12` and store as a `FLEET_KEYSTORE_BASE64` repo Secret. The Build Edge Image workflow decodes it into the build context before `docker build`. This keeps the private key out of the repo and out of operator-workstation drift.
+
+Constraints / trade-offs:
+
+- **The `.p12` contains the private key.** Anyone with image-pull access (or repo Secret access on the CI path) effectively has the fleet's TLS identity. Acceptable when the image registry is private and trusted; not acceptable in any model where a single-fleet-cert compromise can't be tolerated.
+- **No zero-downtime cert rotation.** When the cert nears expiry, you regenerate, redistribute, and rolling-redeploy. For brief windows the Hub may see Edges from both old and new certs — keep both trusted at the Hub during cutover, or bring everything down for a short maintenance window.
+- **Image-bake is necessary, not just config-bake.** The `.p12` must exist in the image (or somewhere readable by the JVM at boot). Mounting it at runtime is feasible but makes the deploy step responsible for distributing the private key, which is worse than having the registry distribute it via the image.
+
+The conditional Dockerfile pattern (`RUN ... if [ -f /tmp/build-ctx/fleet-keystore.p12 ]; then cp ...; fi`) is what lets the same Dockerfile work in both modes: with the fleet keystore for production fleets, without it for dev / testing / single-IPC scenarios. Strict glob `COPY` would 1-or-fail at build time; the conditional path tolerates either input.
+
+When NOT to use this: very small deployments (1-2 IPCs) where per-IPC manual approval is fine, or compliance regimes that mandate per-device unique TLS identity (some industrial security profiles do).
+
+---
