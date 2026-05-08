@@ -12,7 +12,9 @@
 #
 # Then push to GHCR via scripts/push-image-to-ghcr.{sh,ps1}.
 
-ARG IGNITION_VERSION
+# Default keeps `docker build` happy if no --build-arg is passed; CI and
+# the run-build-edge wrappers always pass IGNITION_VERSION, which overrides.
+ARG IGNITION_VERSION=8.3.6
 FROM inductiveautomation/ignition:${IGNITION_VERSION}
 
 # Glob-copy every .modl from the build context. modules.txt is informational
