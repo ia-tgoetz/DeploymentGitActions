@@ -1,19 +1,21 @@
-# Edge gateway image with Cirrus Link MQTT Transmission baked in.
+# Edge gateway image with third-party modules baked into user-lib/modules.
 #
-# Builds a derived image from the official IA Ignition Edge base and copies
-# the Cirrus Link MQTT Transmission .modl into user-lib/modules so it loads
-# automatically on every gateway start (no install pipeline required).
+# Modules are listed by URL in build/edgeGwBuild/modules.txt. The CI
+# workflow (.github/workflows/build-image.yml) downloads them into this
+# directory before `docker build`, then this Dockerfile globs them in.
 #
-# Build:
-#   1. Place MQTT-Transmission-signed.modl alongside this Dockerfile
-#   2. From the repo root:
-#        docker build \
-#          -t edge-with-transmission:8.3.6 \
-#          --build-arg IGNITION_VERSION=8.3.6 \
-#          ./build/edgeGwBuild
-#   3. Push to GHCR via scripts/push-image-to-ghcr.sh (see README)
+# To build locally (after staging .modl files alongside this Dockerfile):
+#   docker build \
+#     -t edge-with-transmission:8.3.6 \
+#     --build-arg IGNITION_VERSION=8.3.6 \
+#     ./build/edgeGwBuild
+#
+# Then push to GHCR via scripts/push-image-to-ghcr.{sh,ps1}.
 
 ARG IGNITION_VERSION
 FROM inductiveautomation/ignition:${IGNITION_VERSION}
 
-COPY --chown=ignition:ignition ./MQTT-Transmission-signed.modl /usr/local/bin/ignition/user-lib/modules/
+# Glob-copy every .modl from the build context. modules.txt is informational
+# only (CI uses it to fetch the files); the actual baking is whatever .modl
+# files end up here at build time.
+COPY --chown=ignition:ignition ./*.modl /usr/local/bin/ignition/user-lib/modules/

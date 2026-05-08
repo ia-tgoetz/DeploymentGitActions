@@ -1,0 +1,9 @@
+# Third-party .modl files to bake into the Edge image.
+# One URL per line. Lines starting with # are ignored.
+# CI downloads each URL into this directory before `docker build`,
+# and the Dockerfile's `COPY *.modl ...` picks them all up.
+#
+# To add a module: append its URL here. To upgrade: change the version.
+# Whitespace around URLs is fine.
+
+https://files.inductiveautomation.com/third-party/cirrus-link/5.0.3/MQTT-Transmission-signed.modl

@@ -27,8 +27,11 @@ services:
       TZ: ${TZ:-America/New_York}
     command: >
       -n ignition-central
+      -m ${IGN_MAX_HEAP:-2048}
       --
       -Dignition.license.leased-activation-terminate-sessions-on-shutdown=true
+    mem_limit: ${IGN_MEM_LIMIT:-4g}
+    cpus: ${IGN_CPUS:-2.0}
     volumes:
       - ignition-central-data:/usr/local/bin/ignition/data
     healthcheck:

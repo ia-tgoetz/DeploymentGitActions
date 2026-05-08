@@ -1,0 +1,111 @@
+name: Build Edge Image
+
+# Builds the derived Ignition Edge image (base + .modl files baked into
+# user-lib/modules) and pushes it to GHCR. Runs on a GitHub-hosted runner —
+# do NOT use the self-hosted IPC runner for this; that's reserved for
+# deployment.
+#
+# Triggers:
+#   - Push to main when anything under build/edgeGwBuild/ changes (Dockerfile
+#     edits or modules.txt edits both count).
+#   - Manual dispatch from the Actions tab — useful when you've cut a new
+#     module version but no Dockerfile change is needed.
+#
+# Outputs:
+#   - ghcr.io/<owner>/ignition-edge:<IGN_RELEASE>          (mutable, used by deploys)
+#   - ghcr.io/<owner>/ignition-edge:<IGN_RELEASE>-<short-sha>  (immutable, for traceability)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'build/edgeGwBuild/**'
+      - '.github/workflows/build-image.yml'
+  workflow_dispatch:
+    inputs:
+      ignition_version:
+        description: 'Ignition base version (becomes the FROM arg and the published tag)'
+        type: string
+        default: '8.3.6'
+
+env:
+  IGN_RELEASE: ${{ github.event.inputs.ignition_version || '8.3.6' }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download .modl files listed in modules.txt
+        working-directory: build/edgeGwBuild
+        run: |
+          set -euo pipefail
+          if [[ ! -f modules.txt ]]; then
+            echo "ERROR: modules.txt not found"
+            exit 1
+          fi
+          # Strip comments and blank lines, then download each URL.
+          while IFS= read -r url; do
+            url="${url%%#*}"          # strip inline comments
+            url="$(echo -n "$url" | xargs || true)"  # trim whitespace
+            [[ -z "$url" ]] && continue
+            echo "Downloading: $url"
+            curl -fL -O "$url"
+          done < modules.txt
+          echo
+          echo "Staged .modl files:"
+          ls -lh ./*.modl
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Compute lowercase owner for ghcr.io
+        id: owner
+        run: |
+          echo "lc=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: build/edgeGwBuild
+          push: true
+          tags: |
+            ghcr.io/${{ steps.owner.outputs.lc }}/ignition-edge:${{ env.IGN_RELEASE }}
+            ghcr.io/${{ steps.owner.outputs.lc }}/ignition-edge:${{ env.IGN_RELEASE }}-${{ github.sha }}
+          build-args: |
+            IGNITION_VERSION=${{ env.IGN_RELEASE }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Verify image contains the staged .modl files
+        run: |
+          set -euo pipefail
+          IMAGE="ghcr.io/${{ steps.owner.outputs.lc }}/ignition-edge:${{ env.IGN_RELEASE }}"
+          docker pull "$IMAGE"
+          echo "Modules in $IMAGE:"
+          docker run --rm --entrypoint=/bin/sh "$IMAGE" \
+            -c 'ls -lh /usr/local/bin/ignition/user-lib/modules/'
+
+      - name: Summary
+        run: |
+          {
+            echo "## Edge image published"
+            echo
+            echo "- \`ghcr.io/${{ steps.owner.outputs.lc }}/ignition-edge:${{ env.IGN_RELEASE }}\` (mutable, picked up by next deploy)"
+            echo "- \`ghcr.io/${{ steps.owner.outputs.lc }}/ignition-edge:${{ env.IGN_RELEASE }}-${{ github.sha }}\` (immutable, for rollback / traceability)"
+            echo
+            echo "**To deploy:** push any commit to main, or run the **Deploy Ignition Edge** workflow."
+          } >> "$GITHUB_STEP_SUMMARY"

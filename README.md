@@ -17,13 +17,15 @@ Automated deployment and configuration sync for Inductive Automation's Ignition 
 
 ```
 .
-├── .github/workflows/deploy.yml    # CI/CD workflow — runs on every push to main
+├── .github/workflows/build-image.yml   # CI: builds & pushes the Edge image when build/edgeGwBuild/ changes
+├── .github/workflows/deploy.yml        # CD: deploys to the IPC on every push to main
 ├── docker-compose.yml              # Production: Ignition Edge only
 ├── docker-compose.test.yml         # Adds a central GW container for local GAN testing
 ├── .env.example                    # Template — copy to .env per environment
 ├── build/
 │   └── edgeGwBuild/
 │       ├── Dockerfile              # Derived Edge image (base + .modl in user-lib/modules)
+│       ├── modules.txt             # URLs of .modl files CI fetches before building
 │       └── .gitignore              # Excludes .modl binaries
 ├── config/
 │   └── central-gateway.env         # GAN target details (per site, committed)
@@ -72,100 +74,63 @@ To bump versions you only change `IGN_RELEASE` (after rebuilding/repushing the d
 
 ---
 
-## Phase 1 — Build and push the derived Edge image
+## Phase 1 — Build and publish the derived Edge image
 
-This phase is done **once per module-version change** (not every deploy). It runs on a workstation, not the IPC. The result is a private image at `ghcr.io/<owner>/ignition-edge:<version>` with all third-party `.modl` files baked into `user-lib/modules`.
+This phase produces the image IPCs pull at deploy time: `ghcr.io/<owner>/ignition-edge:<version>` with all third-party `.modl` files baked into `user-lib/modules`. Done once per module-version change, not per deploy.
 
-### 1.1 Create a GitHub Personal Access Token
+There are two paths. **CI is the recommended one** — zero hands-on work after a config change. The local-build path is for first-time setup, air-gapped scenarios, or when you can't push to GHCR from CI for some reason.
 
-Go to <https://github.com/settings/tokens/new> and create a classic token with these scopes:
-- `write:packages`
-- `read:packages`
-- `repo` (auto-selected)
+### 1A — CI path (recommended)
 
-Save the token somewhere safe. **Never paste it into chat, commits, or shared docs.**
+`.github/workflows/build-image.yml` builds and pushes the image whenever anything under `build/edgeGwBuild/` changes on `main`. To trigger it, just edit the relevant file and push:
 
-### 1.2 Clone the repo and configure
+| Change | What to edit | Result |
+|---|---|---|
+| Add a new module | Append a URL line to `build/edgeGwBuild/modules.txt` | CI rebuilds, downloads the new module, pushes a new image |
+| Upgrade an existing module's version | Change the URL in `modules.txt` to the new version | CI rebuilds with the new `.modl` |
+| Update the Dockerfile (e.g. new base version) | `build/edgeGwBuild/Dockerfile` | CI rebuilds with the new base |
+| Force a rebuild without changing anything | **Actions → Build Edge Image → Run workflow** | Manual trigger, optional `ignition_version` input |
 
-```powershell
-git clone https://github.com/ia-tgoetz/DeploymentGitActions.git
-cd DeploymentGitActions
-copy .env.example .env
-```
+The workflow runs on a GitHub-hosted runner (`ubuntu-latest`) — your IPC's runner is not used for builds, only deploys. Each successful build pushes two tags:
 
-Open `.env` and fill in at minimum:
-```
-GHCR_OWNER=ia-tgoetz
-GHCR_PAT=<your-new-token>
-IGN_RELEASE=8.3.6
-```
+- `ghcr.io/<owner>/ignition-edge:<IGN_RELEASE>` — mutable, what `deploy.yml` pulls
+- `ghcr.io/<owner>/ignition-edge:<IGN_RELEASE>-<commit-sha>` — immutable, useful for rollback or pinning a single IPC to a known build
 
-`.env` is gitignored, so the PAT stays local.
+The Build Edge Image workflow run page also prints a verification step showing what `.modl` files made it into the published image.
 
-### 1.3 Stage the `.modl` files
+### 1B — Local-build path (alternative)
 
-Place each third-party `.modl` you want baked in alongside `build/edgeGwBuild/Dockerfile`:
+Use this when you can't run CI (air-gapped tooling, debugging the build itself, etc.).
 
-```powershell
-copy C:\path\to\MQTT-Transmission-signed.modl build\edgeGwBuild\
-```
+1. **Get a GHCR PAT** with `write:packages` + `read:packages` scopes from <https://github.com/settings/tokens/new>.
+2. **Clone the repo** and copy `.env.example` to `.env`. Set `GHCR_OWNER`, `GHCR_PAT`, and `IGN_RELEASE`.
+3. **Stage `.modl` files** alongside `build/edgeGwBuild/Dockerfile` (the binaries are gitignored).
+4. **Build:**
+   ```bash
+   docker build \
+     -t edge-with-transmission:8.3.6 \
+     --build-arg IGNITION_VERSION=8.3.6 \
+     ./build/edgeGwBuild
+   ```
+5. **(Optional) Save to tar** if you want a sideband artifact: `docker save edge-with-transmission:8.3.6 -o build/edgeGwBuild/edgeWithTransmission.tar`
+6. **Push:**
+   ```powershell
+   .\run-push-edge.ps1
+   ```
+   ```bash
+   bash run-push-edge.sh
+   ```
+   These wrappers load `.env` then call `scripts/push-image-to-ghcr.{ps1,sh}` against the staged tar with destination tag `ignition-edge:${IGN_RELEASE}`.
 
-The `.modl` binaries are gitignored — they live alongside the build context but are never committed.
+### 1C — First-time GHCR package setup
 
-### 1.4 Build the derived image
-
-From the repo root:
-
-```powershell
-docker build `
-  -t edge-with-transmission:8.3.6 `
-  --build-arg IGNITION_VERSION=8.3.6 `
-  .\build\edgeGwBuild
-```
-
-```bash
-docker build \
-  -t edge-with-transmission:8.3.6 \
-  --build-arg IGNITION_VERSION=8.3.6 \
-  ./build/edgeGwBuild
-```
-
-You can also save it as a tar (useful if you want to inspect it before pushing, or distribute it sideband to air-gapped sites):
-
-```bash
-docker save edge-with-transmission:8.3.6 -o build/edgeGwBuild/edgeWithTransmission.tar
-```
-
-### 1.5 Push to GHCR
-
-From the repo root:
-
-```powershell
-.\run-push-edge.ps1            # pushes build\edgeGwBuild\edgeWithTransmission.tar
-```
-
-```bash
-bash run-push-edge.sh           # pushes build/edgeGwBuild/edgeWithTransmission.tar
-```
-
-The wrapper loads `.env`, then calls `scripts/push-image-to-ghcr.{ps1,sh}` against the staged tar with destination tag `ignition-edge:${IGN_RELEASE}`. It prints the GHCR URL when finished.
-
-If you'd rather skip the tar and push the local image directly:
-
-```bash
-GHCR_OWNER=ia-tgoetz GHCR_PAT=<token> \
-  bash scripts/push-image-to-ghcr.sh edge-with-transmission:8.3.6 ignition-edge:8.3.6
-```
-
-### 1.6 Make the new GHCR package accessible
-
-**One time only**, after the first push of a new package:
+Whether you used CI or local build, the **first** time a new package name appears in your GHCR account, configure access **once**:
 
 1. Visit <https://github.com/users/ia-tgoetz/packages/container/ignition-edge/settings>
 2. **Change visibility → Private**
 3. **Manage Actions access → Add Repository → DeploymentGitActions → Read**
 
-Without step 3, the workflow's auto-injected `GITHUB_TOKEN` will 403 when trying to pull.
+Without step 3, the deploy workflow's auto-injected `GITHUB_TOKEN` will 403 when trying to pull.
 
 ---
 
@@ -332,35 +297,48 @@ docker compose -f docker-compose.yml -f docker-compose.test.yml down -v
 
 ### Adding or upgrading a third-party module
 
-1. Place the new `.modl` in `build/edgeGwBuild/`
-2. Update `build/edgeGwBuild/Dockerfile` if you're adding a new `.modl` (add a `COPY` line)
-3. Append the module ID to `ACCEPT_MODULE_LICENSES` and `ACCEPT_MODULE_CERTS` in `.env.example` and `.github/workflows/deploy.yml`'s `.env` write step
+1. Append (or modify) the URL in `build/edgeGwBuild/modules.txt`
+2. Append the module ID to `ACCEPT_MODULE_LICENSES` and `ACCEPT_MODULE_CERTS` in `.env.example` and `.github/workflows/deploy.yml`'s `.env` write step
 
    > Get the canonical module ID from the `.modl` itself:
    > ```bash
-   > python3 -c "import zipfile; print(zipfile.ZipFile('build/edgeGwBuild/<file>.modl').read('module.xml').decode())"
+   > python3 -c "import zipfile; print(zipfile.ZipFile('<file>.modl').read('module.xml').decode())"
    > ```
    > The `<id>` element is what `ACCEPT_MODULE_*` matches against — not the display name, not the resource-folder path.
 
-4. Rebuild and re-push (Phase 1.4 + 1.5)
-5. Bump the image tag if you want versioning per module-version (e.g. `IGN_RELEASE=8.3.6-mqtt-5.0.4`), then update `IGN_RELEASE` in `.env.example` and `deploy.yml`
-6. Commit and push to `main` — every IPC pulls the new image on its next deploy
+3. Push to `main`. The **Build Edge Image** workflow rebuilds and re-publishes; the **Deploy Ignition Edge** workflow then pulls the new image on its next run. (If you only changed `modules.txt` and want to deploy immediately afterward, push a second commit or run the deploy workflow manually.)
 
 ### Bumping the Ignition base version
 
 1. Update the `FROM inductiveautomation/ignition:<version>` line in `build/edgeGwBuild/Dockerfile`
-2. Rebuild and push the derived image (Phase 1.4 + 1.5) with the new `IGN_RELEASE`
-3. Update `IGN_RELEASE` in `.env.example` and `.github/workflows/deploy.yml`
-4. Commit and push to `main`. Every IPC will roll forward on its next deploy.
+2. Update `IGN_RELEASE` in `.env.example` and `.github/workflows/deploy.yml` (the `IGN_RELEASE=...` line in the `.env` write step)
+3. Push to `main` — Build Edge Image rebuilds against the new base, Deploy Ignition Edge picks it up on the next run.
 
 ### Rolling back
 
-Re-tag a known-good image in GHCR (or change `IGN_RELEASE` in `deploy.yml` to a previous tag), commit, push. Every IPC rolls back on the next deploy.
+Each build publishes both a mutable tag (`<IGN_RELEASE>`) and an immutable tag (`<IGN_RELEASE>-<sha>`). Two ways to roll back:
+
+- **Quick:** point the deploy workflow at a previous immutable tag — change `IGN_RELEASE=8.3.6` in `deploy.yml` to `IGN_RELEASE=8.3.6-<old-sha>`, commit, push.
+- **Permanent:** revert the commit that triggered the bad build (or re-push the previous good `Dockerfile`/`modules.txt` state). Build Edge Image rebuilds the previous content into the mutable tag.
 
 ### Changing the central gateway address
 
 1. Edit `config/central-gateway.env`, commit, push.
 2. SSH to each affected IPC and re-run `bash scripts/configure-gan.sh`.
+
+### Tuning resource limits
+
+The container has a memory and CPU cap to keep a runaway gateway from starving the IPC. Defaults:
+
+| Variable | Default | What it does |
+|---|---|---|
+| `IGN_MAX_HEAP` | `2048` | JVM `-Xmx` in MB (max Java heap inside the container) |
+| `IGN_MEM_LIMIT` | `4g` | Docker container memory cap (must exceed `IGN_MAX_HEAP` to leave room for off-heap, DB cache, OS overhead) |
+| `IGN_CPUS` | `2.0` | CPU quota (decimal; can be fractional like `1.5`) |
+
+Override per-IPC by setting any of these in the IPC's runtime `.env` (which `deploy.yml` writes per-deploy) — to make site-specific overrides stick across deploys, modify the `.env` write step in the workflow or set them as repo Secrets and reference them there.
+
+A site running multiple containers, low-spec hardware, or a high-volume Edge with many tags should size up. A small dev IPC can size down to `IGN_MAX_HEAP=1024 IGN_MEM_LIMIT=2g IGN_CPUS=1.0`.
 
 ---
 
@@ -469,13 +447,11 @@ Things worth doing once the fleet starts to scale beyond a handful of IPCs:
 
 ### Deploy pipeline
 
-- **Auto-build the derived image in CI.** Add a second workflow (`.github/workflows/build-image.yml`) that triggers on changes to `build/edgeGwBuild/**` (Dockerfile or `.modl`) and pushes to GHCR with a tag derived from the commit SHA or a content hash. Removes the manual local build / `run-push-edge` step. Keeps the human out of the per-module-update loop.
-- **Smoke test before publish.** Same workflow brings up `docker-compose.test.yml` against the freshly-built image, polls `/StatusPing`, and verifies the third-party module shows as `Running` via the gateway REST API. Failed smoke = no publish.
-- **Image immutability via content tags.** Instead of mutable `:8.3.6`, push as `:8.3.6-mqtt-5.0.3-<short-sha>` and pin `IGN_RELEASE` per deployed cohort. Mutable tags are convenient until two IPCs disagree on what `:8.3.6` means.
+- **Smoke test before publish.** Have Build Edge Image bring up `docker-compose.test.yml` against the freshly-built image, poll `/StatusPing`, and verify the third-party module shows as `Running` via the gateway REST API. Failed smoke = no publish.
+- **Sign published images.** Add cosign / sigstore signing to Build Edge Image; deploy.yml verifies the signature before `docker compose up`. Hardens the supply chain against a compromised PAT or registry.
 
 ### Edge runtime
 
-- **Container resource limits.** `docker-compose.yml` has no `mem_limit` / `cpus` cap. Add them (e.g. `mem_limit: 4g`, `cpus: 2.0`) so a runaway gateway can't starve the host.
 - **Health-check uses StatusPing JSON parsing.** Current `health-check.sh` greps for the literal string `RUNNING`; if IA changes the response shape it breaks silently. Parse with `jq` and assert on `.state == "RUNNING"`.
 - **GAN auto-configuration.** `scripts/configure-gan.sh` is currently a manual SSH step. Wire it into `deploy.yml` to run if `config/central-gateway.env` has `CENTRAL_GW_HOST` set (skip otherwise). Idempotent: only adds the connection if it doesn't already exist.
 

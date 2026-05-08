@@ -51,6 +51,9 @@ jobs:
           IGN_UID=1000
           IGN_GID=1000
           TZ=America/Chicago
+          IGN_MAX_HEAP=2048
+          IGN_MEM_LIMIT=4g
+          IGN_CPUS=2.0
           GATEWAY_ADMIN_USERNAME=${GATEWAY_ADMIN_USERNAME}
           GATEWAY_ADMIN_PASSWORD=${GATEWAY_ADMIN_PASSWORD}
           ACCEPT_MODULE_LICENSES=com.cirruslink.mqtt.transmission.gateway
