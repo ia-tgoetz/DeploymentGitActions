@@ -31,16 +31,23 @@ The container will burn CPU restarting indefinitely; the gateway never opens por
 
 ### Troubleshooting Rule: 2026-05-07 (seeded manually)
 
-**Path matters for third-party module install. Use `/usr/local/bin/ignition/user-lib/modules/` — bind mount or Dockerfile COPY both work.**
+**For runtime module install in 8.3, use the external-modules pattern, not user-lib/modules.**
 
-The IA `module-dev-ignition` example uses `/usr/local/bin/ignition/external-modules` plus JVM flags `-Dignition.modules.install.unattended=true` and `-Dignition.gateway.externalModulesFolder=...`. Those flags are for module developers iterating on unsigned modules — they do not auto-install modules in a production setup. A `.modl` placed there with those flags will sit untouched.
+We tried two paths for auto-installing the Cirrus Link MQTT Transmission `.modl`:
 
-The IA-documented production path for third-party modules is `/usr/local/bin/ignition/user-lib/modules/`. Modules in that directory load on every gateway start and are not uninstallable from the web UI — correct fleet-management behavior. Either approach gets the file there:
+1. `/usr/local/bin/ignition/user-lib/modules/` (bind mount, no JVM flags) — IA's docs describe this as the path for "built-in" modules. **In our 8.3.6 setup, modules dropped here did not load on first boot.** Whether this is an Edge-specific quirk, a load-order issue, or a docs mismatch is unclear, but multiple deploy attempts with a fresh DB and correctly-set EULA env vars never produced a Loaded module.
 
-- **Bind mount (simpler):** `./services/modules:/usr/local/bin/ignition/user-lib/modules` in compose. No build step; module changes apply on next container restart.
-- **Image-baked (more portable):** `COPY services/modules/ /usr/local/bin/ignition/user-lib/modules/` in a Dockerfile that extends the base image. Modules versioned with the image; supports air-gapped distribution.
+2. `/usr/local/bin/ignition/external-modules/` (bind mount) plus JVM flags:
+   ```
+   -Dignition.modules.install.unattended=true
+   -Dignition.modules.install.trust-unknown-certificates=true
+   -Dignition.gateway.externalModulesFolder=/usr/local/bin/ignition/external-modules
+   ```
+   This is the pattern from IA's `module-dev-ignition` example (Adam Koch, IA SE). Despite originating in a developer demo, it's what actually triggers auto-install of pre-staged signed modules in our 8.3.6 deployment.
 
-We chose the bind mount.
+**Behavior to expect:** Ignition consumes the `.modl` from the mounted directory during install (it gets moved into the gateway's internal modules store). The host file may disappear after first boot. `fetch-modules.sh` re-downloads on the next deploy if needed; named volumes survive container restarts so re-install only happens on a clean DB.
+
+The `user-lib/modules/` path is documented in IA's docs but did not work standalone in our environment. The external-modules + JVM flag combination did.
 
 ### Troubleshooting Rule: 2026-05-07 (seeded manually)
 

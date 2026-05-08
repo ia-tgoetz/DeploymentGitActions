@@ -27,21 +27,25 @@ services:
     # default, and the ports: section above maps them to the host. -h/-s/-a
     # are only for configuring the gateway's public-facing URL when behind
     # a reverse proxy or stable DNS.
+    #
+    # Module install: services/modules is bind-mounted at the path pointed
+    # to by -Dignition.gateway.externalModulesFolder. With
+    # -Dignition.modules.install.unattended=true, Ignition auto-installs any
+    # *.modl found there on first boot. -Dignition.modules.install.trust-unknown-
+    # certificates=true accepts the cert without prompting.
     command: >
       -n ${IGN_NAME:-ignition-edge}
       --
       -Dignition.config.mode=${IGN_MODE:-prod}
       -Dignition.license.leased-activation-terminate-sessions-on-shutdown=true
+      -Dignition.modules.install.unattended=true
+      -Dignition.modules.install.trust-unknown-certificates=true
+      -Dignition.gateway.externalModulesFolder=/usr/local/bin/ignition/external-modules
     volumes:
       - ignition-data:/usr/local/bin/ignition/data
       - ignition-resources:/usr/local/bin/ignition/data/config/resources
       - ignition-projects:/usr/local/bin/ignition/data/projects
-      # Modules: bind-mount services/modules/ to the IA-documented path for
-      # third-party modules. Anything *.modl in this directory is loaded on
-      # every gateway start and is not uninstallable from the web UI — which
-      # is the right behavior for fleet-managed sites.
-      # See: https://www.docs.inductiveautomation.com/docs/8.3/platform/docker-image/docker-image-examples
-      - ignition-modules:/usr/local/bin/ignition/user-lib/modules
+      - ignition-modules:/usr/local/bin/ignition/external-modules
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:8088/StatusPing"]
       interval: 30s

@@ -212,7 +212,9 @@ After it completes, verify in GitHub: `Settings → Actions → Runners` — the
 
 ### 3.3 Fetch third-party modules
 
-Third-party `.modl` files in `services/modules/` are bind-mounted into the IA-documented module path inside the container — `/usr/local/bin/ignition/user-lib/modules/` — where Ignition loads them automatically on every gateway start. Modules placed there are not uninstallable from the web UI, which is the right behavior for fleet-managed sites. See the [IA 8.3 docker-image docs](https://www.docs.inductiveautomation.com/docs/8.3/platform/docker-image/docker-image-examples).
+Third-party `.modl` files in `services/modules/` are bind-mounted into `/usr/local/bin/ignition/external-modules/` inside the container, and `docker-compose.yml` sets the JVM flags `-Dignition.gateway.externalModulesFolder=...`, `-Dignition.modules.install.unattended=true`, and `-Dignition.modules.install.trust-unknown-certificates=true` so Ignition auto-installs them on first boot.
+
+> The `user-lib/modules/` path documented in the [IA 8.3 docker-image docs](https://www.docs.inductiveautomation.com/docs/8.3/platform/docker-image/docker-image-examples) is for image-baked "built-in" modules. In our environment, runtime auto-install only worked via the `external-modules` + JVM-flag pattern from IA's `module-dev-ignition` example. See `scripts/memory.md` for the full investigation.
 
 The `.modl` binaries themselves are gitignored — they live alongside the repo on each IPC, not in Git. The deploy workflow runs `fetch-modules.sh` automatically before each restart, but you can also run it manually:
 
