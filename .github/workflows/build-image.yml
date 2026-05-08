@@ -62,12 +62,12 @@ jobs:
           echo "Staged .modl files:"
           ls -lh ./*.modl
 
-      - name: Decode fleet keystore from secret (if set)
+      - name: Decode fleet metro-keystore from secret (if set)
         run: |
           set -euo pipefail
           if [[ -n "${FLEET_KEYSTORE_BASE64:-}" ]]; then
-            echo "$FLEET_KEYSTORE_BASE64" | base64 -d > build/edgeGwBuild/fleet-keystore.p12
-            echo "Fleet keystore staged ($(stat -c%s build/edgeGwBuild/fleet-keystore.p12) bytes)"
+            echo "$FLEET_KEYSTORE_BASE64" | base64 -d > build/edgeGwBuild/metro-keystore
+            echo "Fleet metro-keystore staged ($(stat -c%s build/edgeGwBuild/metro-keystore) bytes)"
           else
             echo "FLEET_KEYSTORE_BASE64 secret not set; building without a shared fleet keystore."
             echo "Each Edge will use its own auto-generated metro keystore."

@@ -6,18 +6,20 @@
 #   See modules.txt + .github/workflows/build-image.yml for how CI fetches
 #   them; locally, run-build-edge does the same via scripts/.
 #
-# Fleet keystore: an optional fleet-keystore.p12 baked at
-#   /usr/local/bin/ignition/etc/. When present, docker-compose.yml's JVM
-#   args point Ignition at it via gateway.metroKeystore* properties so
-#   every Edge in the fleet shares one TLS identity. The Hub admin
-#   approves that one cert and trusts the entire fleet. Generate with
-#   scripts/generate-fleet-cert.{ps1,sh}. The .p12 contains the private
-#   key — never commit; distribute via private GHCR or the
+# Fleet keystore: an optional metro-keystore (PKCS12, alias 'metro-key')
+#   baked at /usr/local/bin/ignition/webserver/metro-keystore — the
+#   conventional location Ignition reads on boot. When present, every
+#   Edge in the fleet identifies as the same TLS endpoint to the Hub,
+#   and the keystore password is supplied via the JVM property
+#   -Dmetro.keystore.password (set in docker-compose.yml's command).
+#   The Hub admin approves that one cert and trusts the entire fleet.
+#   Generate with scripts/generate-fleet-cert.{ps1,sh}. Contains the
+#   private key — never commit; distribute via private GHCR or the
 #   FLEET_KEYSTORE_BASE64 GitHub Secret.
 #
-# When fleet-keystore.p12 is absent, Ignition falls back to its
-# auto-generated metro keystore (per-IPC unique cert) and the Hub admin
-# approves each one individually.
+# When metro-keystore is absent, Ignition auto-generates one on first
+# boot (per-IPC unique cert) and the Hub admin approves each one
+# individually.
 
 ARG IGNITION_VERSION=8.3.6
 FROM inductiveautomation/ignition:${IGNITION_VERSION}
@@ -29,18 +31,18 @@ FROM inductiveautomation/ignition:${IGNITION_VERSION}
 COPY . /tmp/build-ctx/
 
 RUN set -e; \
-    mkdir -p /usr/local/bin/ignition/user-lib/modules /usr/local/bin/ignition/etc; \
+    mkdir -p /usr/local/bin/ignition/user-lib/modules /usr/local/bin/ignition/webserver; \
     if ls /tmp/build-ctx/*.modl >/dev/null 2>&1; then \
       cp /tmp/build-ctx/*.modl /usr/local/bin/ignition/user-lib/modules/; \
       echo "Baked modules:"; ls -lh /usr/local/bin/ignition/user-lib/modules/*.modl; \
     else \
       echo "No .modl files in build context — image will run with stock IA modules only"; \
     fi; \
-    if [ -f /tmp/build-ctx/fleet-keystore.p12 ]; then \
-      cp /tmp/build-ctx/fleet-keystore.p12 /usr/local/bin/ignition/etc/; \
-      echo "Baked fleet keystore: /usr/local/bin/ignition/etc/fleet-keystore.p12"; \
+    if [ -f /tmp/build-ctx/metro-keystore ]; then \
+      cp /tmp/build-ctx/metro-keystore /usr/local/bin/ignition/webserver/metro-keystore; \
+      echo "Baked metro-keystore at /usr/local/bin/ignition/webserver/metro-keystore"; \
     else \
-      echo "No fleet-keystore.p12 — Ignition will use its auto-generated metro keystore"; \
+      echo "No metro-keystore in build context — Ignition will auto-generate one on first boot"; \
     fi; \
-    chown -R ignition:ignition /usr/local/bin/ignition/user-lib/modules /usr/local/bin/ignition/etc; \
+    chown -R ignition:ignition /usr/local/bin/ignition/user-lib/modules /usr/local/bin/ignition/webserver; \
     rm -rf /tmp/build-ctx

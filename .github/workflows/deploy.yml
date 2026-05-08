@@ -134,7 +134,6 @@ jobs:
           GAN_PINGRATE=${GAN_PINGRATE}
           GAN_ENABLESSL=${GAN_ENABLESSL}
           GAN_ENABLED=${GAN_ENABLED}
-          IGN_FLEET_KEYSTORE_ALIAS=${IGN_FLEET_KEYSTORE_ALIAS:-edge-fleet}
           IGN_FLEET_KEYSTORE_PASSWORD=${IGN_FLEET_KEYSTORE_PASSWORD:-changeit}
           EOF
           chmod 600 .env

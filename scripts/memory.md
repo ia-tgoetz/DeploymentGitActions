@@ -381,40 +381,51 @@ For runtime adjustments to an already-running gateway (post-first-boot), the alt
 
 ---
 
-### Optimization Strategy: 2026-05-08 (seeded manually)
+### Optimization Strategy: 2026-05-08 (seeded manually, revised after PDF check)
 
-**For Edge fleets, override Ignition's per-gateway auto-generated metro keystore with a single shared fleet identity keystore. The Hub admin approves one cert; the entire fleet is trusted from then on.**
+**For Edge fleets, override Ignition's per-gateway auto-generated metro keystore with a single shared fleet identity keystore at the conventional path. The Hub admin approves one cert; the entire fleet is trusted from then on.**
 
-By default, every Edge generates a unique self-signed cert in its metro keystore on first boot. The Hub then quarantines each one as it dials in, and an admin must approve per IPC via the web UI. At one or two sites this is fine; at 50+ it's a per-site human bottleneck and basically forecloses on full automation.
+Authoritative source for the configuration shape: IA's *Setting Up Your Own Gateway Network Certificate* (kept under the repo root). The doc walks through the full CSR-to-CA workflow; for our self-signed fleet model, the CSR step is replaced by `openssl req -x509 -addext subjectAltName=...` in one shot.
+
+The actual configuration is much simpler than I had it before — Ignition reads the keystore from a fixed path with a fixed alias, controlled by a single JVM property:
+
+| Concern | Value |
+|---|---|
+| Keystore file in the image | `/usr/local/bin/ignition/webserver/metro-keystore` (conventional; Ignition reads it on boot if present) |
+| Format | PKCS12 (or JKS — PKCS12 is fine for modern Java) |
+| Alias inside the keystore | `metro-key` (fixed by Ignition convention) |
+| JVM property to unlock | `-Dmetro.keystore.password=<password>` (the only flag) |
+| Default password to avoid | `metro` (5 chars, rejected by modern keytool — must be ≥ 6 chars) |
+
+Earlier in this project I attempted this with `-Dgateway.metroKeystorePath`, `-Dgateway.metroKeystoreType`, `-Dgateway.metroKeystoreAlias`, and `-Dgateway.metroKeystorePassword`. **None of those four properties exist in Ignition.** They were a hallucination; the actual setting is just `metro.keystore.password` (and the file path / alias are not configurable — Ignition reads them by convention). Don't reach for "set the keystore path via JVM arg" — it's not a thing. Replace the file at the conventional path instead.
 
 The fleet-cert pattern collapses N approvals into 1:
 
-1. **Generate one self-signed cert + private key once** (`scripts/generate-fleet-cert.{ps1,sh}`). Defaults: `CN=edge-fleet`, alias `edge-fleet`, password `changeit`, validity 1825 days, RSA 2048.
-2. **Bake the PKCS12 into the image** at `/usr/local/bin/ignition/etc/fleet-keystore.p12`. Note the path is **outside** `/data/` — if you put it inside `/data/`, the named volume shadows it on first boot and Ignition can't find it.
-3. **Tell Ignition to use it as the gateway's GAN identity** via four JVM system properties in `docker-compose.yml`:
-   ```
-   -Dgateway.metroKeystorePath=/usr/local/bin/ignition/etc/fleet-keystore.p12
-   -Dgateway.metroKeystoreType=PKCS12
-   -Dgateway.metroKeystoreAlias=${IGN_FLEET_KEYSTORE_ALIAS:-edge-fleet}
-   -Dgateway.metroKeystorePassword=${IGN_FLEET_KEYSTORE_PASSWORD:-changeit}
-   ```
-   With these set, Ignition uses the supplied keystore as the gateway's GAN identity instead of auto-generating one. Without them (or with the file missing), Ignition silently falls back to its per-IPC auto-generated metro keystore — no error, just per-IPC certs again.
-4. **Hub admin trusts `fleet-cert.crt` once.** Every Edge from then on shows up at the Hub identifying as the same TLS endpoint.
+1. **Generate one self-signed cert + private key with multi-SAN** (`scripts/generate-fleet-cert.{ps1,sh}`). The bash version reads `config/fleet.txt` and emits a `DNS:` SAN per hostname; takes a `FLEET_IPS=...` env var for IP SANs. The PowerShell version does DNS SANs only (Windows native APIs make IP-typed SANs awkward — use the bash version on Linux/WSL if you need IP coverage).
+2. **Bake the keystore into the image** at `/usr/local/bin/ignition/webserver/metro-keystore`. Note the path is **outside** `/data/` — Ignition's `webserver/` is part of the image, not the data volume, so the named volume can't shadow it.
+3. **Set `-Dmetro.keystore.password=<password>`** in `docker-compose.yml`'s command. Default is `changeit` (matches `generate-fleet-cert`).
+4. **Hub admin trusts `fleet-cert.crt` once.** Every Edge identifies under that cert from then on.
 
-Distribution paths for the `.p12`:
+Distribution paths for the keystore:
 
-- **Local build:** the keystore lives in `build/edgeGwBuild/fleet-keystore.p12` on the workstation. The Dockerfile picks it up via a conditional `RUN` (so its absence isn't an error). The image is private (GHCR), so the keystore travels inside it to IPCs.
-- **CI build:** base64-encode the `.p12` and store as a `FLEET_KEYSTORE_BASE64` repo Secret. The Build Edge Image workflow decodes it into the build context before `docker build`. This keeps the private key out of the repo and out of operator-workstation drift.
+- **Local build:** the file lives at `build/edgeGwBuild/metro-keystore` on the workstation. The Dockerfile picks it up via a conditional `RUN` (so its absence isn't an error). The image is private (GHCR), so the keystore travels inside it to IPCs.
+- **CI build:** base64-encode the file and store as a `FLEET_KEYSTORE_BASE64` repo Secret. The Build Edge Image workflow decodes it into the build context as `metro-keystore` before `docker build`. Keeps the private key out of the repo and out of operator-workstation drift.
+
+SAN strategy — wildcards:
+
+- X.509 has no syntactic wildcard for arbitrary IP ranges, and `dns:edge-*` (without a parent domain) isn't valid wildcard SAN syntax — `*` is only valid as the leftmost label of a real domain (`*.fleet.example.com`).
+- Practical workarounds: enumerate hostnames/IPs explicitly in the SAN (what `generate-fleet-cert.sh` does, reading `config/fleet.txt`), use a parent-domain wildcard if your IPCs share one, or skip SAN entirely if the Hub doesn't enforce hostname/IP verification.
+- Regenerate the keystore + redistribute when the fleet grows. There's no automation around that yet — it's a deliberate operator action.
 
 Constraints / trade-offs:
 
-- **The `.p12` contains the private key.** Anyone with image-pull access (or repo Secret access on the CI path) effectively has the fleet's TLS identity. Acceptable when the image registry is private and trusted; not acceptable in any model where a single-fleet-cert compromise can't be tolerated.
-- **No zero-downtime cert rotation.** When the cert nears expiry, you regenerate, redistribute, and rolling-redeploy. For brief windows the Hub may see Edges from both old and new certs — keep both trusted at the Hub during cutover, or bring everything down for a short maintenance window.
-- **Image-bake is necessary, not just config-bake.** The `.p12` must exist in the image (or somewhere readable by the JVM at boot). Mounting it at runtime is feasible but makes the deploy step responsible for distributing the private key, which is worse than having the registry distribute it via the image.
+- **The keystore contains the private key.** Anyone with image-pull access (or repo Secret access on the CI path) effectively has the fleet's TLS identity.
+- **No zero-downtime cert rotation.** Regenerate → redistribute → rolling-redeploy. Brief overlap window where Hub sees both old and new certs is unavoidable — keep both trusted at the Hub during cutover, or take the maintenance.
+- **All Edges identify as the same TLS endpoint.** Per-IPC visibility on the Hub side is reduced (the gateway names still differ, but the cert subject is the same for every Edge). For per-IPC TLS identity with single Hub-side trust action, set up your own CA and sign per-IPC certs — different pattern, more operational complexity.
 
-The conditional Dockerfile pattern (`RUN ... if [ -f /tmp/build-ctx/fleet-keystore.p12 ]; then cp ...; fi`) is what lets the same Dockerfile work in both modes: with the fleet keystore for production fleets, without it for dev / testing / single-IPC scenarios. Strict glob `COPY` would 1-or-fail at build time; the conditional path tolerates either input.
+The conditional Dockerfile pattern (`if [ -f /tmp/build-ctx/metro-keystore ]; then cp ...; fi`) is what lets the same Dockerfile work in both modes: with the fleet keystore for production fleets, without it for dev / testing / single-IPC scenarios. Strict glob `COPY` would 1-or-fail at build time; the conditional tolerates either input.
 
-When NOT to use this: very small deployments (1-2 IPCs) where per-IPC manual approval is fine, or compliance regimes that mandate per-device unique TLS identity (some industrial security profiles do).
+When NOT to use this: very small deployments (1-2 IPCs) where per-IPC manual approval is fine, compliance regimes that mandate per-device unique TLS identity, or any scenario where a single-fleet-cert compromise can't be tolerated.
 
 ---
 

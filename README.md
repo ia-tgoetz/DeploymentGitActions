@@ -27,10 +27,10 @@ Automated deployment and configuration sync for Inductive Automation's Ignition 
 ├── .env.example                    # Template — copy to .env per environment
 ├── build/
 │   └── edgeGwBuild/
-│       ├── Dockerfile              # Derived Edge image (base + .modl in user-lib/modules + optional fleet keystore in etc/)
+│       ├── Dockerfile              # Derived Edge image (base + .modl in user-lib/modules + optional metro-keystore in webserver/)
 │       ├── modules.txt             # URLs of .modl files CI fetches before building
 │       ├── fleet-cert.crt          # Public fleet identity cert — committed; Hub admin imports once to trust the whole fleet
-│       └── .gitignore              # Excludes .modl binaries and fleet-keystore.p12 (private key)
+│       └── .gitignore              # Excludes .modl binaries and metro-keystore (private key)
 ├── config/
 │   ├── central-gateway.env         # GAN target details (per site, committed)
 │   └── fleet.txt                   # IPC roster — one hostname per line; deploy workflow fans out to each
@@ -92,7 +92,9 @@ To bump versions you only change `IGN_RELEASE` (after rebuilding/repushing the d
 
 By default, every Edge gateway auto-generates its own unique TLS identity (the "metro keystore") on first boot. The Hub then quarantines each one and an admin has to click "approve" per IPC. At one or two sites this is fine; at 50+ it's a per-site bottleneck.
 
-The fleet-cert pattern collapses that to a single approval. You generate one self-signed cert + private key, bake it into the image, and tell Ignition to use it as the gateway's GAN identity via `gateway.metroKeystore*` JVM args. Every Edge then identifies as the same TLS endpoint to the Hub. The Hub admin approves the one cert once; the entire fleet is trusted.
+The fleet-cert pattern collapses that to a single approval. You generate one self-signed cert + private key, package it as a PKCS12 keystore (alias `metro-key`), and bake it into the image at the conventional path `/usr/local/bin/ignition/webserver/metro-keystore`. Ignition reads from that file by convention; the JVM property `-Dmetro.keystore.password=...` (set in `docker-compose.yml`) supplies the password. Every Edge then identifies as the same TLS endpoint to the Hub. The Hub admin approves the one cert once; the entire fleet is trusted.
+
+This follows the workflow documented in *Setting Up Your Own Gateway Network Certificate* (Inductive Automation), with the CSR-to-CA step replaced by self-signing.
 
 If you skip this phase, deployments still work — Ignition falls back to per-IPC auto-generated metro keystores and the Hub admin approves each.
 
@@ -107,34 +109,40 @@ From a workstation (does not need to be the IPC):
 bash scripts/generate-fleet-cert.sh
 ```
 
+The cert's SAN list is built dynamically from `config/fleet.txt` — every hostname you've added becomes a `DNS:` SAN entry. To include IPs (only the `bash` script supports IP-typed SANs):
+
+```bash
+FLEET_IPS="192.168.1.10,192.168.1.20" bash scripts/generate-fleet-cert.sh
+```
+
 Outputs (in `build/edgeGwBuild/`):
 
 | File | Purpose | Commit? |
 |---|---|---|
 | `fleet-cert.crt` | Public cert. Hand to whoever runs the Hub. | **Yes** — public certs are safe to commit and convenient to share |
-| `fleet-keystore.p12` | PKCS12 with cert + private key. Baked into the image. | **No** — `.gitignore` already excludes it. The private key gives anyone the fleet's TLS identity. |
+| `metro-keystore` | PKCS12 keystore (cert + private key, alias `metro-key`). Baked into the image. | **No** — `.gitignore` excludes it. The private key gives anyone the fleet's TLS identity. |
 
-Defaults are subject `CN=edge-fleet`, alias `edge-fleet`, password `changeit`, validity 1825 days. Override via flags / env vars (see the script header).
+Defaults: subject `CN=edge-fleet`, alias `metro-key` (fixed by Ignition convention), password `changeit`, validity 1825 days, RSA 4096. Override via flags / env vars (see the script header).
 
 ### 1.0.2 Distribute the keystore (pick one)
 
-The `.p12` must be present in `build/edgeGwBuild/` at image-build time so the Dockerfile can copy it into `/usr/local/bin/ignition/etc/fleet-keystore.p12`. Two paths:
+The keystore file must be present at `build/edgeGwBuild/metro-keystore` at image-build time so the Dockerfile can copy it into the image. Two paths:
 
-- **Local-build path** — keep `fleet-keystore.p12` on the workstation that runs `run-build-edge.{ps1,sh}`. The Dockerfile picks it up automatically. The image is private (GHCR), so the keystore travels with it to the IPCs.
-- **CI-build path** — base64-encode the `.p12` and store it as a GitHub Secret named `FLEET_KEYSTORE_BASE64`. The `Build Edge Image` workflow decodes it into the build context before `docker build`.
+- **Local-build path** — keep `metro-keystore` on the workstation that runs `run-build-edge.{ps1,sh}`. The Dockerfile picks it up automatically. The image is private (GHCR), so the keystore travels with it to the IPCs.
+- **CI-build path** — base64-encode the file and store it as a GitHub Secret named `FLEET_KEYSTORE_BASE64`. The `Build Edge Image` workflow decodes it into the build context before `docker build`.
 
   ```powershell
   # Windows — copy to clipboard, then paste into the Secret value field
-  [Convert]::ToBase64String([System.IO.File]::ReadAllBytes("build\edgeGwBuild\fleet-keystore.p12")) | clip
+  [Convert]::ToBase64String([System.IO.File]::ReadAllBytes("build\edgeGwBuild\metro-keystore")) | Set-Clipboard
   ```
   ```bash
   # Linux/macOS
-  base64 -w0 build/edgeGwBuild/fleet-keystore.p12 | xclip -selection clipboard
+  base64 -w0 build/edgeGwBuild/metro-keystore | xclip -selection clipboard
   ```
 
   Add at `Settings → Secrets and variables → Actions → New repository secret`. If the password isn't the default `changeit`, also set `IGN_FLEET_KEYSTORE_PASSWORD`.
 
-If the secret is unset (or the local `.p12` is missing), CI/local builds still succeed — the image just doesn't carry a fleet keystore and Edges fall back to per-IPC auto-generated ones.
+If the secret is unset (or the local file is missing), CI/local builds still succeed — the image just doesn't carry a fleet keystore and Edges fall back to per-IPC auto-generated ones.
 
 ### 1.0.3 Hand the public cert to the Hub admin
 

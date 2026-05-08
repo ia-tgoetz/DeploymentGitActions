@@ -6,6 +6,7 @@
 # Fleet identity keystore — contains the private key, MUST NOT be committed.
 # Generate via scripts/generate-fleet-cert.{ps1,sh}; distribute via the
 # image (private GHCR) or the FLEET_KEYSTORE_BASE64 GitHub Secret.
+metro-keystore
 *.p12
 *.pfx
 *.jks
