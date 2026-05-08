@@ -72,10 +72,11 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Compute lowercase owner for ghcr.io
-        id: owner
+      - name: Compute build metadata
+        id: meta
         run: |
-          echo "lc=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+          echo "lc_owner=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+          echo "short_sha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
       - name: Build and push
         uses: docker/build-push-action@v5
@@ -83,8 +84,8 @@ jobs:
           context: build/edgeGwBuild
           push: true
           tags: |
-            ghcr.io/${{ steps.owner.outputs.lc }}/ignition-edge:${{ env.IGN_RELEASE }}
-            ghcr.io/${{ steps.owner.outputs.lc }}/ignition-edge:${{ env.IGN_RELEASE }}-${{ github.sha }}
+            ghcr.io/${{ steps.meta.outputs.lc_owner }}/ignition-edge:${{ env.IGN_RELEASE }}
+            ghcr.io/${{ steps.meta.outputs.lc_owner }}/ignition-edge:${{ env.IGN_RELEASE }}-${{ steps.meta.outputs.short_sha }}
           build-args: |
             IGNITION_VERSION=${{ env.IGN_RELEASE }}
           cache-from: type=gha
@@ -93,7 +94,7 @@ jobs:
       - name: Verify image contains the staged .modl files
         run: |
           set -euo pipefail
-          IMAGE="ghcr.io/${{ steps.owner.outputs.lc }}/ignition-edge:${{ env.IGN_RELEASE }}"
+          IMAGE="ghcr.io/${{ steps.meta.outputs.lc_owner }}/ignition-edge:${{ env.IGN_RELEASE }}"
           docker pull "$IMAGE"
           echo "Modules in $IMAGE:"
           docker run --rm --entrypoint=/bin/sh "$IMAGE" \
@@ -104,8 +105,8 @@ jobs:
           {
             echo "## Edge image published"
             echo
-            echo "- \`ghcr.io/${{ steps.owner.outputs.lc }}/ignition-edge:${{ env.IGN_RELEASE }}\` (mutable, picked up by next deploy)"
-            echo "- \`ghcr.io/${{ steps.owner.outputs.lc }}/ignition-edge:${{ env.IGN_RELEASE }}-${{ github.sha }}\` (immutable, for rollback / traceability)"
+            echo "- \`ghcr.io/${{ steps.meta.outputs.lc_owner }}/ignition-edge:${{ env.IGN_RELEASE }}\` (mutable, picked up by next deploy)"
+            echo "- \`ghcr.io/${{ steps.meta.outputs.lc_owner }}/ignition-edge:${{ env.IGN_RELEASE }}-${{ steps.meta.outputs.short_sha }}\` (immutable, for rollback / traceability)"
             echo
             echo "**To deploy:** push any commit to main, or run the **Deploy Ignition Edge** workflow."
           } >> "$GITHUB_STEP_SUMMARY"
