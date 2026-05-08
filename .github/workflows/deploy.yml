@@ -3,6 +3,9 @@ name: Deploy Ignition Edge
 on:
   push:
     branches: [main]
+    paths-ignore:
+      # Agent-authored memory updates must NOT trigger another deploy
+      - 'scripts/memory.md'
   workflow_dispatch:
 
 jobs:
@@ -10,7 +13,7 @@ jobs:
     runs-on: self-hosted
     environment: production
     permissions:
-      contents: read
+      contents: write   # bumped from read so the agent can push memory.md
       packages: read
 
     steps:
@@ -28,7 +31,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Ensure Ignition image is loaded
-        run: bash scripts/load-image.sh
+        run: bash scripts/load-image.sh 2>&1 | tee load-image-log.txt
         env:
           IGN_RELEASE: "8.3.6"
           IGNITION_IMAGE: ghcr.io/${{ github.repository_owner }}/ignition
@@ -36,7 +39,6 @@ jobs:
 
       - name: Write runtime .env
         run: |
-          # Gateway name derives from the IPC's hostname unless overridden
           IGN_NAME="${IGN_NAME_OVERRIDE:-$(hostname | tr '[:upper:]' '[:lower:]')}"
           cat > .env <<EOF
           IGN_RELEASE=8.3.6
@@ -64,8 +66,37 @@ jobs:
           docker compose up -d
 
       - name: Wait for gateway to be healthy
-        run: bash scripts/health-check.sh
+        run: bash scripts/health-check.sh 2>&1 | tee health-check-log.txt
+
+      # ==========================================================================
+      # Claude Agent — wakes up only on failure, investigates, may record a lesson
+      # ==========================================================================
+      - name: Run Claude agent on failure
+        if: failure()
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          set -e
+          echo "Deploy failed — starting Claude agent in venv (PEP 668-safe)..."
+          python3 -m venv /tmp/agent-venv
+          /tmp/agent-venv/bin/pip install --quiet --upgrade pip
+          /tmp/agent-venv/bin/pip install --quiet -r scripts/requirements.txt
+          /tmp/agent-venv/bin/python scripts/deploy_agent.py
+
+      - name: Commit agent memory if changed
+        if: always()
+        run: |
+          if ! git diff --quiet -- scripts/memory.md 2>/dev/null; then
+            echo "Agent recorded a new lesson — committing."
+            git config --local user.name "Claude DevOps Agent"
+            git config --local user.email "noreply@anthropic.com"
+            git add scripts/memory.md
+            git commit -m "docs: agent recorded new lesson [skip ci]"
+            git push
+          else
+            echo "No memory changes to commit."
+          fi
 
       - name: Clean up secrets
         if: always()
-        run: rm -f .env
+        run: rm -f .env load-image-log.txt health-check-log.txt

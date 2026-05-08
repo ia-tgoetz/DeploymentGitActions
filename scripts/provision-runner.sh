@@ -45,10 +45,12 @@ log "Provisioning $(hostname) for $REPO_URL"
 log "Runner name: $RUNNER_NAME    Service user: $RUNNER_USER"
 
 # ----- 1. System packages ----------------------------------------------------
-log "Installing system packages (curl, git, jq, ufw, ca-certificates)..."
+log "Installing system packages (curl, git, jq, ufw, ca-certificates, python3)..."
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-apt-get install -y -qq curl git jq ufw ca-certificates
+# python3 + python3-venv are needed by the Claude troubleshooting agent
+# (.github/workflows/deploy.yml runs deploy_agent.py from a venv on failure)
+apt-get install -y -qq curl git jq ufw ca-certificates python3 python3-venv python3-pip
 
 # ----- 2. Docker -------------------------------------------------------------
 if ! command -v docker &>/dev/null; then

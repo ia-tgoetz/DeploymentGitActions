@@ -37,7 +37,10 @@ Automated deployment and configuration sync for Inductive Automation's Ignition 
     ├── provision-runner.sh         # One-shot: full IPC provisioning (Docker, UFW, runner)
     ├── load-image.sh               # IPC: ensure image is available (GHCR or tar)
     ├── health-check.sh             # IPC: poll /StatusPing until RUNNING
-    └── configure-gan.sh            # IPC: one-time GAN connection setup
+    ├── configure-gan.sh            # IPC: one-time GAN connection setup
+    ├── deploy_agent.py             # Claude agent — runs on deploy failure, investigates, may record a lesson
+    ├── memory.md                   # Persistent agent memory (auto-appended to)
+    └── requirements.txt            # Python deps for deploy_agent.py
 ```
 
 ---
@@ -149,6 +152,7 @@ Then under **Manage Actions access**, add this repository so the workflow's `GIT
 | `GATEWAY_ADMIN_USERNAME` | Initial admin username for the gateway |
 | `GATEWAY_ADMIN_PASSWORD` | Initial admin password (use a strong one) |
 | `IGN_NAME` *(optional)* | Override the gateway display name. If unset, the IPC's hostname is used. |
+| `ANTHROPIC_API_KEY` *(optional)* | Powers the auto-troubleshooting agent (`scripts/deploy_agent.py`). Without it, deploy failures are surfaced as workflow errors only — no auto-investigation. Get from <https://console.anthropic.com/settings/keys>. |
 
 `GITHUB_TOKEN` is auto-provided by GitHub Actions and is what the workflow uses to authenticate to GHCR — no extra secret needed.
 
@@ -327,6 +331,28 @@ Re-tag a known-good version in GHCR or revert the `main` branch commit that bump
 
 1. Edit `config/central-gateway.env`, commit, push.
 2. SSH to each affected IPC and re-run `bash scripts/configure-gan.sh`.
+
+---
+
+## Auto-troubleshooting agent
+
+When a deploy step fails on the runner, `deploy.yml` invokes `scripts/deploy_agent.py` — a Claude (`claude-sonnet-4-6`) tool-use agent that investigates the IPC and may append a lesson to `scripts/memory.md`. The agent has four tools:
+
+| Tool | Purpose |
+|---|---|
+| `get_docker_logs` | Tail logs from a named container |
+| `check_disk_space` | `df -h` on the host |
+| `read_local_file` | Read a file — **restricted** to paths under the repo or `/var/log/`; blocks anything matching credential / secret / SSH-key patterns |
+| `record_lesson` | Append a Markdown entry to `scripts/memory.md` (committed and pushed by the workflow) |
+
+Safety:
+
+- Hard cap of 15 tool-use iterations per invocation
+- System prompt explicitly forbids reading or writing credentials/PII; the file-read tool enforces a path allowlist + denylist independently
+- Memory file commits use `[skip ci]` and the workflow trigger has `paths-ignore: scripts/memory.md`, so an agent-authored lesson cannot trigger another deploy
+- Prompt caching is enabled on the system prompt so iteration cost is mostly cache reads after the first call
+
+Set `ANTHROPIC_API_KEY` in repo Secrets to enable; the agent silently no-ops if the key is missing. Memory entries are public — do not edit them by hand to add anything sensitive.
 
 ---
 
