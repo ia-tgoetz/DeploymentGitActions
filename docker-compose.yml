@@ -17,12 +17,12 @@ services:
       IGNITION_EDITION: edge
       TZ: ${TZ:-America/New_York}
       # Pre-accept third-party module licenses on first boot.
-      # IA's matcher is a case-insensitive SUBSTRING match against the module's
-      # internal name. We include both the display name and the resource-folder
-      # ID for safety — whichever Ignition checks against, we hit it.
-      GATEWAY_MODULES_ACCEPTED: ${GATEWAY_MODULES_ACCEPTED:-MQTT Transmission,com.cirruslink.mqtt.transmission.gateway}
-      ACCEPT_MODULE_LICENSES: ${ACCEPT_MODULE_LICENSES:-MQTT Transmission,com.cirruslink.mqtt.transmission.gateway}
-      ACCEPT_MODULE_CERTS: ${ACCEPT_MODULE_CERTS:-MQTT Transmission,com.cirruslink.mqtt.transmission.gateway}
+      # The actual module ID for Cirrus Link MQTT Transmission is
+      # com.cirruslink.mqtt.transmission (no .gateway suffix — that came
+      # from the resource-folder path, not the module identifier).
+      GATEWAY_MODULES_ACCEPTED: ${GATEWAY_MODULES_ACCEPTED:-com.cirruslink.mqtt.transmission}
+      ACCEPT_MODULE_LICENSES: ${ACCEPT_MODULE_LICENSES:-com.cirruslink.mqtt.transmission}
+      ACCEPT_MODULE_CERTS: ${ACCEPT_MODULE_CERTS:-com.cirruslink.mqtt.transmission}
     # No -h/-s/-a flags: the container's internal listener is 8088/8043 by
     # default, and the ports: section above maps them to the host. -h/-s/-a
     # are only for configuring the gateway's public-facing URL when behind

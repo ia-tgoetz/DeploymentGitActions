@@ -53,9 +53,9 @@ jobs:
           TZ=America/Chicago
           GATEWAY_ADMIN_USERNAME=${GATEWAY_ADMIN_USERNAME}
           GATEWAY_ADMIN_PASSWORD=${GATEWAY_ADMIN_PASSWORD}
-          GATEWAY_MODULES_ACCEPTED=com.cirruslink.mqtt.transmission.gateway
-          ACCEPT_MODULE_LICENSES=com.cirruslink.mqtt.transmission.gateway
-          ACCEPT_MODULE_CERTS=com.cirruslink.mqtt.transmission.gateway
+          GATEWAY_MODULES_ACCEPTED=com.cirruslink.mqtt.transmission
+          ACCEPT_MODULE_LICENSES=com.cirruslink.mqtt.transmission
+          ACCEPT_MODULE_CERTS=com.cirruslink.mqtt.transmission
           EOF
           chmod 600 .env
         env:
