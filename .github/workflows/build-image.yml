@@ -13,7 +13,7 @@ name: Build Edge Image
 #
 # Outputs:
 #   - ghcr.io/<owner>/ignition-edge:<IGN_RELEASE>          (mutable, used by deploys)
-#   - ghcr.io/<owner>/ignition-edge:<IGN_RELEASE>-<short-sha>  (immutable, for traceability)
+#   - ghcr.io/<owner>/ignition-edge:<IGN_RELEASE>-<short-sha>  (immutable, for traceability) 
 
 on:
   push:
