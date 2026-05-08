@@ -48,14 +48,16 @@ if (Test-Path $Manifest) {
             $target = Join-Path $BuildDir $filename
             if (Test-Path $target) {
                 Write-Host "  Already present: $filename" -ForegroundColor DarkGray
-            } else {
+            }
+            else {
                 Write-Host "  Downloading: $url" -ForegroundColor Cyan
                 Invoke-WebRequest -Uri $url -OutFile $target
             }
         }
     }
-} else {
-    Write-Host "No modules.txt found — building with whatever .modl files are already in $BuildDir" -ForegroundColor Yellow
+}
+else {
+    Write-Host "No modules.txt found - building with whatever .modl files are already in $BuildDir" -ForegroundColor Yellow
 }
 
 Write-Host ""
