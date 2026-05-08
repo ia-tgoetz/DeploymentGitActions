@@ -49,7 +49,38 @@ log() { printf '\033[1;36m==>\033[0m %s\n' "$*"; }
 log "Provisioning $(hostname) for $REPO_URL"
 log "Runner name: $RUNNER_NAME    Service user: $RUNNER_USER"
 
-# ----- 1. System packages ----------------------------------------------------
+# ----- 1. Ensure root LV consumes the whole disk -----------------------------
+# Ubuntu Server's installer leaves ~50% of the disk unallocated in the VG by
+# default, so a 30 GB VM becomes a 15 GB rootfs unless someone runs lvextend.
+# That's enough to break Ignition's first-boot init ("No space left on device"
+# during module extraction). Detect VFree > 100 MB and grow the LV + FS.
+log "Checking root LV capacity..."
+ROOT_SRC=$(findmnt -no SOURCE /)
+ROOT_FS=$(findmnt -no FSTYPE /)
+if [[ "$ROOT_SRC" == /dev/mapper/* ]] && command -v vgs &>/dev/null; then
+  VG_NAME=$(lvs --noheadings -o vg_name "$ROOT_SRC" 2>/dev/null | xargs || true)
+  if [[ -n "$VG_NAME" ]]; then
+    VFREE_BYTES=$(vgs --noheadings -o vg_free --units b --nosuffix "$VG_NAME" 2>/dev/null | xargs || echo 0)
+    if [[ "$VFREE_BYTES" -gt $((100 * 1024 * 1024)) ]]; then
+      VFREE_MB=$((VFREE_BYTES / 1024 / 1024))
+      log "Found ${VFREE_MB} MB unallocated in VG '$VG_NAME' — extending root LV."
+      lvextend -l +100%FREE "$ROOT_SRC"
+      case "$ROOT_FS" in
+        ext2|ext3|ext4) resize2fs "$ROOT_SRC" ;;
+        xfs)            xfs_growfs / ;;
+        btrfs)          btrfs filesystem resize max / ;;
+        *)              log "Unknown FS type '$ROOT_FS' — extend the FS manually." ;;
+      esac
+      log "Root after resize: $(df -h --output=size,used,avail / | tail -n1)"
+    else
+      log "Root LV already covers the VG (VFree < 100 MB)."
+    fi
+  fi
+else
+  log "Root mount is not LVM ($ROOT_SRC) — skipping LV resize."
+fi
+
+# ----- 2. System packages ----------------------------------------------------
 log "Installing system packages (curl, git, jq, ufw, ca-certificates, python3)..."
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
@@ -57,7 +88,7 @@ apt-get update -qq
 # (.github/workflows/deploy.yml runs deploy_agent.py from a venv on failure)
 apt-get install -y -qq curl git jq ufw ca-certificates python3 python3-venv python3-pip
 
-# ----- 2. Docker -------------------------------------------------------------
+# ----- 3. Docker -------------------------------------------------------------
 if ! command -v docker &>/dev/null; then
   log "Installing Docker via get.docker.com..."
   curl -fsSL https://get.docker.com | sh
@@ -66,7 +97,7 @@ else
 fi
 systemctl enable --now docker
 
-# ----- 3. Service user -------------------------------------------------------
+# ----- 4. Service user -------------------------------------------------------
 if ! id "$RUNNER_USER" &>/dev/null; then
   log "Creating system user $RUNNER_USER..."
   useradd --system --shell /usr/sbin/nologin --home-dir "$RUNNER_HOME" "$RUNNER_USER"
@@ -83,7 +114,7 @@ if ! id -nG "$RUNNER_USER" | tr ' ' '\n' | grep -qx docker; then
   usermod -aG docker "$RUNNER_USER"
 fi
 
-# ----- 4. Firewall (UFW) -----------------------------------------------------
+# ----- 5. Firewall (UFW) -----------------------------------------------------
 log "Configuring UFW (SSH first to avoid lockout, then Ignition ports)..."
 ufw allow OpenSSH
 for port in "${IGNITION_PORTS[@]}"; do
@@ -92,7 +123,7 @@ done
 ufw --force enable
 ufw reload
 
-# ----- 5. Runner binaries ----------------------------------------------------
+# ----- 6. Runner binaries ----------------------------------------------------
 if [[ ! -x "$RUNNER_HOME/config.sh" ]]; then
   log "Fetching latest GitHub Actions runner release..."
   RUNNER_VERSION=$(curl -sL https://api.github.com/repos/actions/runner/releases/latest \
@@ -109,7 +140,7 @@ else
   log "Runner binaries already present in $RUNNER_HOME."
 fi
 
-# ----- 6. Register runner ----------------------------------------------------
+# ----- 7. Register runner ----------------------------------------------------
 if [[ ! -f "$RUNNER_HOME/.runner" ]]; then
   log "Registering runner with GitHub as '$RUNNER_NAME'..."
   cd "$RUNNER_HOME"
@@ -127,7 +158,7 @@ else
   log "  To re-register with a new token: rm $RUNNER_HOME/.runner && re-run."
 fi
 
-# ----- 7. Systemd service ----------------------------------------------------
+# ----- 8. Systemd service ----------------------------------------------------
 log "Installing systemd service..."
 cd "$RUNNER_HOME"
 # Clean up any prior install so the new one inherits the docker group
@@ -138,7 +169,7 @@ fi
 ./svc.sh install "$RUNNER_USER"
 ./svc.sh start
 
-# ----- 8. Pre-stage image dir (for optional tar fallback) --------------------
+# ----- 9. Pre-stage image dir (for optional tar fallback) --------------------
 log "Creating ${IGNITION_IMAGES_DIR}/ for optional air-gapped image tars..."
 mkdir -p "$IGNITION_IMAGES_DIR"
 chown "$RUNNER_USER:$RUNNER_USER" "$IGNITION_IMAGES_DIR"

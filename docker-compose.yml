@@ -8,6 +8,12 @@ services:
     image: ${IGNITION_IMAGE:-ghcr.io/ia-tgoetz/ignition-edge}:${IGN_RELEASE:-8.3.6}
     user: 0:0
     container_name: ${IGN_NAME:-ignition-edge}
+    # Container's internal $HOSTNAME — set to the IPC hostname so logs,
+    # GAN identity hints, and `docker exec ... hostname` all line up with
+    # the IPC's name rather than a random container ID. Pairs with
+    # container_name above so `docker ps` and the in-container hostname
+    # report the same value.
+    hostname: ${IGN_NAME:-ignition-edge}
     restart: unless-stopped
     ports:
       - "${IGN_PORT:-8088}:8088"

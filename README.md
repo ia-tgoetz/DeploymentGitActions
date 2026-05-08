@@ -276,14 +276,15 @@ That's it. The script:
 
 | Step | What it does |
 |---|---|
-| 1 | Installs `curl`, `git`, `jq`, `ufw`, `ca-certificates`, `python3` + `python3-venv` |
-| 2 | Installs Docker via `get.docker.com` (skips if already present) |
-| 3 | Creates the `github-runner` system user (no login shell, in `docker` group) |
-| 4 | Configures UFW: allows `OpenSSH`, then opens Ignition ports `8088`, `8043`, `8060` |
-| 5 | Downloads the latest GitHub Actions runner into `/opt/actions-runner` |
-| 6 | Registers it with GitHub using your token, name = hostname, labels = `self-hosted,Linux,X64,ipc,<hostname>` (the hostname label is what deploy.yml's matrix targets) |
-| 7 | Installs and starts the systemd service running as `github-runner` |
-| 8 | Pre-creates `/opt/ignition-images/` for the optional tar fallback |
+| 1 | **Grows the root LV to use the full disk** — Ubuntu Server's installer leaves ~50% of the disk unallocated by default; this detects `VFree > 100 MB` in the VG and runs `lvextend + resize2fs` (or `xfs_growfs`/`btrfs filesystem resize` based on the FS type). No-op on a correctly-sized host. |
+| 2 | Installs `curl`, `git`, `jq`, `ufw`, `ca-certificates`, `python3` + `python3-venv` |
+| 3 | Installs Docker via `get.docker.com` (skips if already present) |
+| 4 | Creates the `github-runner` system user (no login shell, in `docker` group) |
+| 5 | Configures UFW: allows `OpenSSH`, then opens Ignition ports `8088`, `8043`, `8060` |
+| 6 | Downloads the latest GitHub Actions runner into `/opt/actions-runner` |
+| 7 | Registers it with GitHub using your token, name = hostname, labels = `self-hosted,Linux,X64,ipc,<hostname>` (the hostname label is what deploy.yml's matrix targets) |
+| 8 | Installs and starts the systemd service running as `github-runner` |
+| 9 | Pre-creates `/opt/ignition-images/` for the optional tar fallback |
 
 After it completes, verify in GitHub: `Settings → Actions → Runners` — the runner should appear as **Idle** with the IPC's existing hostname, and its label list should include that hostname.
 
