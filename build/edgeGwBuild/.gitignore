@@ -3,13 +3,11 @@
 # artifact, not the source binaries.
 *.modl
 
-# Fleet identity keystore — contains the private key, MUST NOT be committed.
-# Generate via scripts/generate-fleet-cert.{ps1,sh}; distribute via the
-# image (private GHCR) or the FLEET_KEYSTORE_BASE64 GitHub Secret.
+# Defensive: never commit private-key-bearing keystores or cert
+# bundles, even when the automated fleet-cert pipeline isn't in use.
+# (The pipeline lived here previously — see tag archive/fleet-cert-stack.)
 metro-keystore
 *.p12
 *.pfx
 *.jks
-
-# fleet-cert.crt is intentionally NOT ignored — public certs are safe to
-# commit and convenient to distribute to Hub admins.
+*.key

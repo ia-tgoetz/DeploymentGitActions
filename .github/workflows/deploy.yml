@@ -134,16 +134,11 @@ jobs:
           GAN_PINGRATE=${GAN_PINGRATE}
           GAN_ENABLESSL=${GAN_ENABLESSL}
           GAN_ENABLED=${GAN_ENABLED}
-          IGN_FLEET_KEYSTORE_PASSWORD=${IGN_FLEET_KEYSTORE_PASSWORD:-changeit}
           EOF
           chmod 600 .env
         env:
           GATEWAY_ADMIN_USERNAME: ${{ secrets.GATEWAY_ADMIN_USERNAME }}
           GATEWAY_ADMIN_PASSWORD: ${{ secrets.GATEWAY_ADMIN_PASSWORD }}
-          # Optional: override the fleet keystore password if you set a
-          # non-default value when running generate-fleet-cert. Falls
-          # back to "changeit" (matches script default) if Secret unset.
-          IGN_FLEET_KEYSTORE_PASSWORD: ${{ secrets.IGN_FLEET_KEYSTORE_PASSWORD }}
 
       - name: Set transmitter edgeNodeId to gateway name
         run: bash scripts/configure-transmitter.sh "${{ matrix.ipc }}"

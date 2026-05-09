@@ -62,19 +62,6 @@ jobs:
           echo "Staged .modl files:"
           ls -lh ./*.modl
 
-      - name: Decode fleet metro-keystore from secret (if set)
-        run: |
-          set -euo pipefail
-          if [[ -n "${FLEET_KEYSTORE_BASE64:-}" ]]; then
-            echo "$FLEET_KEYSTORE_BASE64" | base64 -d > build/edgeGwBuild/metro-keystore
-            echo "Fleet metro-keystore staged ($(stat -c%s build/edgeGwBuild/metro-keystore) bytes)"
-          else
-            echo "FLEET_KEYSTORE_BASE64 secret not set; building without a shared fleet keystore."
-            echo "Each Edge will use its own auto-generated metro keystore."
-          fi
-        env:
-          FLEET_KEYSTORE_BASE64: ${{ secrets.FLEET_KEYSTORE_BASE64 }}
-
       - name: Login to GHCR
         uses: docker/login-action@v3
         with:

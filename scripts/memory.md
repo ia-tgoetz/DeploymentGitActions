@@ -381,7 +381,9 @@ For runtime adjustments to an already-running gateway (post-first-boot), the alt
 
 ---
 
-### Optimization Strategy: 2026-05-08 (seeded manually, revised after PDF check)
+### Optimization Strategy: 2026-05-08 (archived 2026-05-09)
+
+> **NOTE:** the automated fleet-keystore stack documented below was removed from `main` on 2026-05-09 in favor of per-IPC manual cert handling. The full implementation lives at git tag `archive/fleet-cert-stack`. Keep this lesson around because the *configuration shape* (file path, alias, JVM property name) is the authoritative reference for any future re-introduction.
 
 **For Edge fleets, override Ignition's per-gateway auto-generated metro keystore with a single shared fleet identity keystore at the conventional path. The Hub admin approves one cert; the entire fleet is trusted from then on.**
 

@@ -11,8 +11,8 @@ Automated deployment and configuration sync for Inductive Automation's Ignition 
 5. **Config-as-code:** Ignition projects and the file-based VCS config live in `services/projects/` and `services/config/resources/`, bind-mounted into the container.
 6. **Gateway naming:** each IPC's Ignition gateway name automatically inherits the host's `hostname`, so the central GW's GAN view shows fleet members by IPC identity. Override with the `IGN_NAME` repo Secret if you need a custom name.
 7. **Transmitter identity:** at deploy time, `scripts/configure-transmitter.sh` rewrites `edgeNodeId` in every Cirrus Link transmitter config under `services/config/resources/.../transmitter/<name>/config.json` to match the gateway name. Each IPC publishes to MQTT under its own edge-node ID without per-site config sprawl.
-8. **Fleet identity (optional):** a single self-signed cert + PKCS12 keystore baked into the image gives every Edge in the fleet the same TLS identity to the Hub. The Hub admin approves one cert; the whole fleet is trusted. Without this, Ignition auto-generates a unique metro keystore per IPC and the Hub admin has to approve each one individually. See Phase 1.0.
-9. **Fleet fan-out:** `config/fleet.txt` lists every IPC by hostname. The deploy workflow uses a matrix strategy that spawns one job per entry, each pinned to that IPC's runner via a hostname-specific label. A push to `main` deploys to **every** IPC in parallel; `fail-fast: false` keeps a bad IPC from cancelling the rest. Manual dispatch with an `ipc` input targets one IPC for canary deploys.
+8. **Fleet fan-out:** `config/fleet.txt` lists every IPC by hostname. The deploy workflow uses a matrix strategy that spawns one job per entry, each pinned to that IPC's runner via a hostname-specific label. A push to `main` deploys to **every** IPC in parallel; `fail-fast: false` keeps a bad IPC from cancelling the rest. Manual dispatch with an `ipc` input targets one IPC for canary deploys.
+9. **Per-IPC GAN identity (manual):** each Edge auto-generates its own metro keystore on first boot; the Hub admin approves per IPC manually. The pipeline does not bake a shared fleet identity. (An automated fleet-cert flow lived here previously — see git tag `archive/fleet-cert-stack` to recover it.)
 
 ---
 
@@ -27,10 +27,9 @@ Automated deployment and configuration sync for Inductive Automation's Ignition 
 ├── .env.example                    # Template — copy to .env per environment
 ├── build/
 │   └── edgeGwBuild/
-│       ├── Dockerfile              # Derived Edge image (base + .modl in user-lib/modules + optional metro-keystore in webserver/)
+│       ├── Dockerfile              # Derived Edge image (base + .modl in user-lib/modules)
 │       ├── modules.txt             # URLs of .modl files CI fetches before building
-│       ├── fleet-cert.crt          # Public fleet identity cert — committed; Hub admin imports once to trust the whole fleet
-│       └── .gitignore              # Excludes .modl binaries and metro-keystore (private key)
+│       └── .gitignore              # Excludes .modl binaries
 ├── config/
 │   ├── central-gateway.env         # GAN target details (per site, committed)
 │   └── fleet.txt                   # IPC roster — one hostname per line; deploy workflow fans out to each
@@ -51,8 +50,6 @@ Automated deployment and configuration sync for Inductive Automation's Ignition 
     ├── health-check.sh             # IPC: poll /StatusPing until RUNNING
     ├── configure-gan.sh            # IPC: one-time GAN connection setup (legacy fallback)
     ├── configure-transmitter.sh    # Deploy-time: rewrites edgeNodeId in every Cirrus Link transmitter config to the IPC's hostname
-    ├── generate-fleet-cert.ps1     # Generate the shared fleet identity cert + PKCS12 keystore (Windows)
-    ├── generate-fleet-cert.sh      # Same, for Linux/macOS (uses openssl)
     ├── fetch-server-cert.ps1       # Fetch a remote server's public TLS cert and stage it under services/pki/trusted/clients/ (Windows)
     ├── fetch-server-cert.sh        # Same, for Linux/macOS (uses openssl)
     ├── deploy_agent.py             # Claude agent — runs on deploy failure, investigates, may record a lesson
@@ -88,82 +85,11 @@ To bump versions you only change `IGN_RELEASE` (after rebuilding/repushing the d
 
 ---
 
-## Phase 1.0 — Fleet identity cert (one-time, optional but recommended at scale)
-
-By default, every Edge gateway auto-generates its own unique TLS identity (the "metro keystore") on first boot. The Hub then quarantines each one and an admin has to click "approve" per IPC. At one or two sites this is fine; at 50+ it's a per-site bottleneck.
-
-The fleet-cert pattern collapses that to a single approval. You generate one self-signed cert + private key, package it as a PKCS12 keystore (alias `metro-key`), and bake it into the image at the conventional path `/usr/local/bin/ignition/webserver/metro-keystore`. Ignition reads from that file by convention; the JVM property `-Dmetro.keystore.password=...` (set in `docker-compose.yml`) supplies the password. Every Edge then identifies as the same TLS endpoint to the Hub. The Hub admin approves the one cert once; the entire fleet is trusted.
-
-This follows the workflow documented in *Setting Up Your Own Gateway Network Certificate* (Inductive Automation), with the CSR-to-CA step replaced by self-signing.
-
-If you skip this phase, deployments still work — Ignition falls back to per-IPC auto-generated metro keystores and the Hub admin approves each.
-
-### 1.0.1 Generate the fleet cert
-
-From a workstation (does not need to be the IPC):
-
-```powershell
-.\scripts\generate-fleet-cert.ps1
-```
-```bash
-bash scripts/generate-fleet-cert.sh
-```
-
-The cert's SAN list is built dynamically from `config/fleet.txt` — every hostname you've added becomes a `DNS:` SAN entry. To include IPs (only the `bash` script supports IP-typed SANs):
-
-```bash
-FLEET_IPS="192.168.1.10,192.168.1.20" bash scripts/generate-fleet-cert.sh
-```
-
-Outputs (in `build/edgeGwBuild/`):
-
-| File | Purpose | Commit? |
-|---|---|---|
-| `fleet-cert.crt` | Public cert. Hand to whoever runs the Hub. | **Yes** — public certs are safe to commit and convenient to share |
-| `metro-keystore` | PKCS12 keystore (cert + private key, alias `metro-key`). Baked into the image. | **No** — `.gitignore` excludes it. The private key gives anyone the fleet's TLS identity. |
-
-Defaults: subject `CN=edge-fleet`, alias `metro-key` (fixed by Ignition convention), password `changeit`, validity 1825 days, RSA 4096. Override via flags / env vars (see the script header).
-
-### 1.0.2 Distribute the keystore (pick one)
-
-The keystore file must be present at `build/edgeGwBuild/metro-keystore` at image-build time so the Dockerfile can copy it into the image. Two paths:
-
-- **Local-build path** — keep `metro-keystore` on the workstation that runs `run-build-edge.{ps1,sh}`. The Dockerfile picks it up automatically. The image is private (GHCR), so the keystore travels with it to the IPCs.
-- **CI-build path** — base64-encode the file and store it as a GitHub Secret named `FLEET_KEYSTORE_BASE64`. The `Build Edge Image` workflow decodes it into the build context before `docker build`.
-
-  ```powershell
-  # Windows — copy to clipboard, then paste into the Secret value field
-  [Convert]::ToBase64String([System.IO.File]::ReadAllBytes("build\edgeGwBuild\metro-keystore")) | Set-Clipboard
-  ```
-  ```bash
-  # Linux/macOS
-  base64 -w0 build/edgeGwBuild/metro-keystore | xclip -selection clipboard
-  ```
-
-  Add at `Settings → Secrets and variables → Actions → New repository secret`. If the password isn't the default `changeit`, also set `IGN_FLEET_KEYSTORE_PASSWORD`.
-
-If the secret is unset (or the local file is missing), CI/local builds still succeed — the image just doesn't carry a fleet keystore and Edges fall back to per-IPC auto-generated ones.
-
-### 1.0.3 Hand the public cert to the Hub admin
-
-Email / Slack / commit `build/edgeGwBuild/fleet-cert.crt`. The Hub admin imports it once into the Hub's trusted certs (Config → Networking → Gateway Network → Certificates → trust the incoming cert). After that, every Edge that boots with the keystore connects without quarantine.
-
-### 1.0.4 Rotation
-
-The keystore has a fixed validity (5 years by default). When it nears expiry:
-
-1. Regenerate with `generate-fleet-cert` (same alias / password to avoid coordinated config changes).
-2. Re-upload the new base64 to the `FLEET_KEYSTORE_BASE64` Secret (or replace the local `.p12`).
-3. Hand the new `fleet-cert.crt` to the Hub admin.
-4. Trigger a rebuild + rolling redeploy. IPCs pulling the new image identify under the new cert.
-
-There is no zero-downtime overlap with this pattern — for a brief window the Hub may see Edges from both old and new certs. If your fleet can't tolerate that, run two parallel keystores during cutover and keep both trusted at the Hub.
-
----
-
 ## Phase 1 — Build and publish the derived Edge image
 
-This phase produces the image IPCs pull at deploy time: `ghcr.io/<owner>/ignition-edge:<version>` with all third-party `.modl` files baked into `user-lib/modules` and the fleet keystore (if present) at `etc/fleet-keystore.p12`. Done once per module- or keystore-change, not per deploy.
+This phase produces the image IPCs pull at deploy time: `ghcr.io/<owner>/ignition-edge:<version>` with all third-party `.modl` files baked into `user-lib/modules`. Done once per module-version change, not per deploy.
+
+> **GAN identity is per-IPC.** Each Edge auto-generates its own metro keystore on first boot; the Hub admin approves each cert manually. The pipeline used to bake a shared fleet keystore here — see git tag `archive/fleet-cert-stack` to retrieve that flow.
 
 There are two paths. **CI is the recommended one** — zero hands-on work after a config change. The local-build path is for first-time setup, air-gapped scenarios, or when you can't push to GHCR from CI for some reason.
 
@@ -242,8 +168,6 @@ Without step 3, the deploy workflow's auto-injected `GITHUB_TOKEN` will 403 when
 |---|---|
 | `GATEWAY_ADMIN_USERNAME` | Initial admin username for the gateway |
 | `GATEWAY_ADMIN_PASSWORD` | Initial admin password (use a strong one) |
-| `FLEET_KEYSTORE_BASE64` *(optional)* | Base64-encoded `fleet-keystore.p12` from Phase 1.0. Only needed for the CI-build path. If unset, CI builds without a fleet keystore and Edges fall back to per-IPC auto-generated metro keystores. |
-| `IGN_FLEET_KEYSTORE_PASSWORD` *(optional)* | Override the fleet keystore password if you generated the `.p12` with something other than the default `changeit`. |
 | `ANTHROPIC_API_KEY` *(optional)* | Powers the auto-troubleshooting agent (`scripts/deploy_agent.py`). Without it, deploy failures are surfaced as workflow errors only — no auto-investigation. Get from <https://console.anthropic.com/settings/keys>. |
 
 `GITHUB_TOKEN` is auto-provided by GitHub Actions and is what the workflow uses to authenticate to GHCR — no extra secret needed.
@@ -364,7 +288,6 @@ Open `http://<ipc-ip>:8088` in a browser to verify. Log in with the admin creden
 |---|---|---|
 | **Config → Modules** | Cirrus Link MQTT Transmission as `Trial / ACTIVE` | See "Module shows up under Config → Modules but state is `default`" in Troubleshooting |
 | **Config → Networking → Gateway Network** | Outgoing connection to the Hub, state `Connected` (not `Quarantined`, not `Disabled`) | Check `services/pki/trusted/clients/` has the Hub's cert; check `config/central-gateway.env` values |
-| **Config → Networking → Gateway Network → Identity** *(if using Option B)* | Cert subject = `CN=edge-fleet` (or whatever you set in `generate-fleet-cert`), not the auto-generated `ip-x.x.x.x:8060` | Data volume holds the old auto-generated cert; SSH to the IPC, `docker compose down -v`, redeploy |
 
 > **First-boot gotcha:** the workflow's restart step runs `docker compose down` (no `-v`), so the named volume `*_ignition-data` persists between deploys. If a previous deploy left the volume in a half-initialized state (failed init loop, partial module install, etc.), boot symptoms include a phantom module entry under Config → Modules with state `default` and a `W [g.ModuleManager]: The file for module ... is missing` log line. Fix: SSH to the IPC and wipe the volume **once** before triggering a fresh deploy:
 >
@@ -438,7 +361,7 @@ After the deploy completes, the connection should appear at:
 |---|---|---|
 | `allowIncoming` | `false` | Edges don't accept dial-ins. Only the Hub initiates outbound; nothing on the Edge listens for incoming GAN. Closes that surface entirely. |
 | `requireSSL` | `true` | All GAN traffic uses TLS — no plaintext fallback even on internal networks. |
-| `requireTwoWayAuth` | `true` | Both sides present and validate certs. The Hub trusts the fleet cert (Phase 1.0); the Edge trusts the Hub via Phase 5.2. |
+| `requireTwoWayAuth` | `true` | Both sides present and validate certs. Each Edge presents its own auto-generated metro cert (the Hub admin approves per IPC); the Edge trusts the Hub via Phase 5.2. |
 | `securityPolicy` | `ApprovedOnly` | Even if `allowIncoming` were ever flipped to `true`, only certs that were explicitly approved would be honored. Defense-in-depth. |
 
 Combined effect: an Edge can only originate a TLS-mutual-auth connection to a Hub it already trusts; nothing else can reach in. If a site requires the Edge to also accept incoming GAN (e.g. for centralized push delivery), flip `allowIncoming` to `true` and add the originator's cert to `services/pki/trusted/clients/`. Otherwise leave it as committed.
