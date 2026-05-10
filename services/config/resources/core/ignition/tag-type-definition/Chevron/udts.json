@@ -1,5 +1,98 @@
 [
   {
+    "name": "Meter Data",
+    "tagType": "UdtType",
+    "tags": [
+      {
+        "valueSource": "opc",
+        "opcItemPath": "ns\u003d1;s\u003d[Meter Data 1]Average Pressure",
+        "dataType": "Float8",
+        "name": "Average Pressure",
+        "deadband": 0.01,
+        "engUnit": "psi",
+        "tagType": "AtomicTag",
+        "opcServer": "Ignition OPC UA Server"
+      },
+      {
+        "valueSource": "opc",
+        "opcItemPath": "ns\u003d1;s\u003d[Meter Data 1]Average Temperature",
+        "dataType": "Float8",
+        "name": "Average Temperature",
+        "deadband": 0.01,
+        "engUnit": "F",
+        "tagType": "AtomicTag",
+        "opcServer": "Ignition OPC UA Server"
+      },
+      {
+        "valueSource": "opc",
+        "opcItemPath": "ns\u003d1;s\u003d[Meter Data 1]Differential Pressure",
+        "dataType": "Float8",
+        "name": "Differential Pressure",
+        "deadband": 0.01,
+        "engUnit": "psid",
+        "tagType": "AtomicTag",
+        "opcServer": "Ignition OPC UA Server"
+      },
+      {
+        "valueSource": "expr",
+        "expression": "secondsBetween(midnight(now(5000)), now(1000)) / 60\n",
+        "dataType": "Float8",
+        "name": "Flow Time Today",
+        "deadband": 0.01,
+        "executionMode": "FixedRate",
+        "executionRate": 5000,
+        "engUnit": "min",
+        "tagType": "AtomicTag"
+      },
+      {
+        "valueSource": "memory",
+        "dataType": "Float8",
+        "name": "Flow Time Yesterday",
+        "value": 1440.0,
+        "engUnit": "min",
+        "tagType": "AtomicTag"
+      },
+      {
+        "valueSource": "derived",
+        "deriveExpressionGetter": "{[.]Flow Time Today}/12",
+        "dataType": "Float8",
+        "name": "Flow Today",
+        "engUnit": "bbl",
+        "tagType": "AtomicTag"
+      },
+      {
+        "valueSource": "opc",
+        "opcItemPath": "ns\u003d1;s\u003d[Meter Data 1]Hourly Flowrate",
+        "dataType": "Float8",
+        "name": "Hourly Flowrate",
+        "deadband": 0.01,
+        "engUnit": "bbh",
+        "tagType": "AtomicTag",
+        "opcServer": "Ignition OPC UA Server"
+      },
+      {
+        "valueSource": "opc",
+        "opcItemPath": "ns\u003d1;s\u003d[Meter Data 1]Static Pressure",
+        "dataType": "Float8",
+        "name": "Static Pressure",
+        "deadband": 0.01,
+        "engUnit": "psi",
+        "tagType": "AtomicTag",
+        "opcServer": "Ignition OPC UA Server"
+      },
+      {
+        "valueSource": "opc",
+        "opcItemPath": "ns\u003d1;s\u003d[Meter Data 1]Temperature",
+        "dataType": "Float8",
+        "name": "Temperature",
+        "deadband": 0.01,
+        "engUnit": "F",
+        "tagType": "AtomicTag",
+        "opcServer": "Ignition OPC UA Server"
+      }
+    ]
+  },
+  {
     "name": "Meter Config",
     "tagType": "UdtType",
     "tags": [
@@ -23,12 +116,6 @@
         "tags": [
           {
             "valueSource": "memory",
-            "name": "Base Temperature",
-            "value": 79,
-            "tagType": "AtomicTag"
-          },
-          {
-            "valueSource": "memory",
             "dataType": "String",
             "name": "Atmospheric Calculation",
             "value": "Entered",
@@ -38,6 +125,12 @@
             "valueSource": "memory",
             "name": "Atmospheric Pressure",
             "value": 46,
+            "tagType": "AtomicTag"
+          },
+          {
+            "valueSource": "memory",
+            "name": "Base Temperature",
+            "value": 79,
             "tagType": "AtomicTag"
           },
           {
@@ -81,91 +174,6 @@
         "name": "Units",
         "value": "US",
         "tagType": "AtomicTag"
-      }
-    ]
-  },
-  {
-    "name": "Meter Data",
-    "tagType": "UdtType",
-    "tags": [
-      {
-        "valueSource": "opc",
-        "opcItemPath": "ns\u003d1;s\u003d[Meter Data 1]Average Pressure",
-        "dataType": "Float8",
-        "name": "Average Pressure",
-        "deadband": 0.01,
-        "tagType": "AtomicTag",
-        "opcServer": "Ignition OPC UA Server"
-      },
-      {
-        "valueSource": "opc",
-        "opcItemPath": "ns\u003d1;s\u003d[Meter Data 1]Average Temperature",
-        "dataType": "Float8",
-        "name": "Average Temperature",
-        "deadband": 0.01,
-        "tagType": "AtomicTag",
-        "opcServer": "Ignition OPC UA Server"
-      },
-      {
-        "valueSource": "opc",
-        "opcItemPath": "ns\u003d1;s\u003d[Meter Data 1]Differential Pressure",
-        "dataType": "Float8",
-        "name": "Differential Pressure",
-        "deadband": 0.01,
-        "tagType": "AtomicTag",
-        "opcServer": "Ignition OPC UA Server"
-      },
-      {
-        "valueSource": "expr",
-        "expression": "secondsBetween(midnight(now(5000)), now(1000)) / 60\n",
-        "dataType": "Float8",
-        "name": "Flow Time Today",
-        "deadband": 0.01,
-        "executionMode": "FixedRate",
-        "executionRate": 5000,
-        "tagType": "AtomicTag"
-      },
-      {
-        "valueSource": "memory",
-        "dataType": "Float8",
-        "name": "Flow Time Yesterday",
-        "value": 1440.0,
-        "tagType": "AtomicTag"
-      },
-      {
-        "valueSource": "derived",
-        "deriveExpressionGetter": "{[.]Flow Time Today}/12",
-        "dataType": "Float8",
-        "name": "Flow Today",
-        "tagType": "AtomicTag"
-      },
-      {
-        "valueSource": "opc",
-        "opcItemPath": "ns\u003d1;s\u003d[Meter Data 1]Hourly Flowrate",
-        "dataType": "Float8",
-        "name": "Hourly Flowrate",
-        "deadband": 0.01,
-        "engUnit": "bbh",
-        "tagType": "AtomicTag",
-        "opcServer": "Ignition OPC UA Server"
-      },
-      {
-        "valueSource": "opc",
-        "opcItemPath": "ns\u003d1;s\u003d[Meter Data 1]Static Pressure",
-        "dataType": "Float8",
-        "name": "Static Pressure",
-        "deadband": 0.01,
-        "tagType": "AtomicTag",
-        "opcServer": "Ignition OPC UA Server"
-      },
-      {
-        "valueSource": "opc",
-        "opcItemPath": "ns\u003d1;s\u003d[Meter Data 1]Temperature",
-        "dataType": "Float8",
-        "name": "Temperature",
-        "deadband": 0.01,
-        "tagType": "AtomicTag",
-        "opcServer": "Ignition OPC UA Server"
       }
     ]
   }

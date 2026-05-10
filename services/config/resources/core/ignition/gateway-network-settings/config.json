@@ -1,5 +1,5 @@
 {
-  "allowIncoming": false,
+  "allowIncoming": true,
   "allowJavaSerialization": false,
   "allowedProxyHops": 0,
   "dataChannelQueueSize": 50,
