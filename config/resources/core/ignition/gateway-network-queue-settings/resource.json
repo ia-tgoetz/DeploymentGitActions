@@ -1,0 +1,17 @@
+{
+  "scope": "A",
+  "version": 1,
+  "restricted": false,
+  "overridable": true,
+  "files": [
+    "config.json"
+  ],
+  "attributes": {
+    "lastModification": {
+      "actor": "unknown",
+      "timestamp": "2026-05-08T18:18:14Z"
+    },
+    "lastModificationSignature": "dbd3b143fa57311ffa08e7c6ecea82fe8b26193e2c179e9531e6969543a85100",
+    "enabled": false
+  }
+}
