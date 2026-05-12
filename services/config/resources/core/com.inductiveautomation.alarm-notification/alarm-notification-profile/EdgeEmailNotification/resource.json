@@ -1,0 +1,14 @@
+{
+  "scope": "A",
+  "description": "Edge Email Notification Profile",
+  "version": 1,
+  "restricted": false,
+  "overridable": false,
+  "files": [
+    "config.json"
+  ],
+  "attributes": {
+    "uuid": "a9eb5990-5c14-4bc8-a376-5db43a479719",
+    "enabled": false
+  }
+}

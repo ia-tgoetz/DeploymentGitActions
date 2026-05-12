@@ -1,0 +1,31 @@
+[
+  {
+    "name": "Meter Config",
+    "typeId": "Meter Config",
+    "tagType": "UdtInstance",
+    "tags": [
+      {
+        "name": "Advanced",
+        "tagType": "Folder",
+        "tags": [
+          {
+            "alarms": [
+              {
+                "mode": "AboveValue",
+                "setpointA": 300.0,
+                "name": "AboveSetpoint"
+              }
+            ],
+            "name": "Base Temperature",
+            "tagType": "AtomicTag"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "Meter Data",
+    "typeId": "Meter Data",
+    "tagType": "UdtInstance"
+  }
+]

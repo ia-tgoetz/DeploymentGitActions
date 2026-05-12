@@ -1,0 +1,14 @@
+{
+  "scope": "A",
+  "description": "Edge Remote Notification Profile",
+  "version": 1,
+  "restricted": false,
+  "overridable": false,
+  "files": [
+    "config.json"
+  ],
+  "attributes": {
+    "uuid": "db628ed8-53ed-4a3e-83fa-434ff56eec5c",
+    "enabled": false
+  }
+}
