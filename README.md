@@ -105,7 +105,17 @@ There are two paths. **CI is the recommended one** — zero hands-on work after 
 | Update the Dockerfile (e.g. new base version) | `build/edgeGwBuild/Dockerfile` | CI rebuilds with the new base |
 | Force a rebuild without changing anything | **Actions → Build Edge Image → Run workflow** | Manual trigger, optional `ignition_version` input |
 
-The workflow runs on a GitHub-hosted runner (`ubuntu-latest`) — your IPC's runner is not used for builds, only deploys. Each successful build pushes two tags, both mutable:
+To run via GitHub CLI:
+```bash
+# Build with default version
+gh workflow run "Build Edge Image"
+
+# Build with a specific version
+gh workflow run "Build Edge Image" -f ignition_version=8.3.7
+```
+
+The workflow runs on a GitHub-hosted runner (`ubuntu-latest`) — your IPC's runner is not used for builds, only deploys.
+ Each successful build pushes two tags, both mutable:
 
 - `ghcr.io/<owner>/ignition-edge:<IGN_RELEASE>` — version-pinned (e.g. `8.3.6`); what `deploy.yml` pulls
 - `ghcr.io/<owner>/ignition-edge:latest` — always the most recent build, regardless of version
@@ -265,6 +275,15 @@ sudo mv ignition-edge-8.3.6.tar /opt/ignition-images/
 
 Use **Actions → Deploy Ignition Edge → Run workflow** (or `gh workflow run "Deploy Ignition Edge"`). The workflow has two jobs:
 
+To run via GitHub CLI:
+```bash
+# Deploy to the entire fleet
+gh workflow run "Deploy Ignition Edge"
+
+# Target a specific IPC
+gh workflow run "Deploy Ignition Edge" -f ipc=edge-site-houston
+```
+
 | Job | Where | What |
 |---|---|---|
 | `discover` | `ubuntu-latest` (GitHub-hosted) | Reads `config/fleet.txt` (or the `ipc` workflow input) and emits a JSON array of target hostnames. |
@@ -370,6 +389,28 @@ Combined effect: an Edge can only originate a TLS-mutual-auth connection to a Hu
 ### 5.5 Manual fallback (legacy)
 
 If you ever need to add or modify a GAN connection on an already-running gateway without wiping the volume, `scripts/configure-gan.sh` calls Ignition's REST API to do it imperatively. It's no longer the primary path (the env-var seeding handles fresh deploys cleanly) but remains in the repo for ad-hoc per-site adjustments.
+
+---
+
+## Phase 6 — Syncing projects and configuration (No Restart)
+
+Once the gateway is running, you can push project changes or gateway configuration updates (`services/projects/` or `services/config/resources/`) without a full `docker compose down && up`. Ignition 8.3's native file-watcher detects these changes in the bind-mounted volumes and applies them in real-time.
+
+Use **Actions → Sync Projects (No Restart) → Run workflow**.
+
+To run via GitHub CLI:
+```bash
+# Sync the entire fleet
+gh workflow run "Sync Projects (No Restart)"
+
+# Sync a specific IPC
+gh workflow run "Sync Projects (No Restart)" -f ipc=edge-site-houston
+```
+
+The workflow:
+1. Performs a `git checkout` on the runner to update the local files.
+2. Runs `scripts/configure-transmitter.sh` to ensure `edgeNodeId` matches the IPC.
+3. Verifies gateway health.
 
 ---
 
