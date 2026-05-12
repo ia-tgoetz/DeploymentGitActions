@@ -6,11 +6,6 @@ name: Deploy Ignition Edge
 # doesn't cancel deploys to the rest of the fleet.
 
 on:
-  push:
-    branches: [main]
-    paths-ignore:
-      # Agent-authored memory updates must NOT trigger another deploy
-      - 'scripts/memory.md'
   workflow_dispatch:
     inputs:
       ipc:
