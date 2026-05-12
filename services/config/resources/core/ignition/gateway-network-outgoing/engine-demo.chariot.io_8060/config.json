@@ -1,5 +1,5 @@
 {
-  "host": "https://engine-demo.chariot.io/",
+  "host": "engine-demo.chariot.io",
   "httpConnectTimeoutMillis": 10000,
   "httpReadTimeoutMillis": 60000,
   "pingMaxMissed": 30,
