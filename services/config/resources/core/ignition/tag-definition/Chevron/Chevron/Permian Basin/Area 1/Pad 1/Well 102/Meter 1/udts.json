@@ -1,12 +1,20 @@
 [
   {
-    "name": "Meter Data",
-    "typeId": "Meter Data",
-    "tagType": "UdtInstance"
-  },
-  {
     "name": "Meter Config",
     "typeId": "Meter Config",
     "tagType": "UdtInstance"
+  },
+  {
+    "name": "Meter Data",
+    "typeId": "Meter Data",
+    "tagType": "UdtInstance",
+    "tags": [
+      {
+        "historyProvider": "Edge Historian",
+        "historyEnabled": true,
+        "name": "Average Pressure",
+        "tagType": "AtomicTag"
+      }
+    ]
   }
 ]

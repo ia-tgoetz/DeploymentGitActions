@@ -1,7 +1,12 @@
 {
   "custom": {},
   "params": {},
-  "props": {},
+  "props": {
+    "defaultSize": {
+      "height": 824,
+      "width": 901
+    }
+  },
   "root": {
     "children": [
       {
@@ -39,6 +44,261 @@
           "text": "Wait, It got Better"
         },
         "type": "ia.display.label"
+      },
+      {
+        "custom": {
+          "key": "value"
+        },
+        "meta": {
+          "name": "PowerChart"
+        },
+        "position": {
+          "basis": "600px",
+          "grow": 1
+        },
+        "props": {
+          "axes": [
+            {
+              "color": "#757A7F",
+              "dataFormat": "0,0.##",
+              "grid": {
+                "color": "",
+                "dashArray": 0,
+                "opacity": 0.9,
+                "style": {
+                  "classes": ""
+                },
+                "visible": false
+              },
+              "label": {
+                "font": {
+                  "color": "#757A7F",
+                  "size": 10
+                },
+                "offset": 0,
+                "style": {
+                  "classes": ""
+                },
+                "text": ""
+              },
+              "name": "",
+              "position": "left",
+              "range": {
+                "auto": true,
+                "max": "",
+                "min": ""
+              },
+              "style": {
+                "classes": ""
+              },
+              "tick": {
+                "color": "#757A7F",
+                "count": "Auto",
+                "label": {
+                  "font": {
+                    "color": "#757A7F",
+                    "size": 10
+                  },
+                  "format": "Auto",
+                  "style": {
+                    "classes": ""
+                  }
+                },
+                "style": {
+                  "classes": ""
+                }
+              },
+              "width": 60
+            }
+          ],
+          "config": {
+            "rangeEndDate": {
+              "$": [
+                "ts",
+                0,
+                1778592661162
+              ],
+              "$ts": 1778592649157
+            },
+            "rangeStartDate": {
+              "$": [
+                "ts",
+                0,
+                1778592661162
+              ],
+              "$ts": 1778589061157
+            },
+            "unitOfTime": 1
+          },
+          "interaction": {
+            "chartZoomLevel": 1,
+            "rangeZoomLevel": 1
+          },
+          "pens": [
+            {
+              "axis": "",
+              "data": {
+                "aggregateMode": "default",
+                "source": "histprov:Edge Historian:/sys:ignition-edge:/prov:Chevron:/tag:Chevron/Permian Basin/Area 1/Pad 1/Well 102/Meter 1/Meter Data/Average Pressure"
+              },
+              "display": {
+                "breakLine": true,
+                "interpolation": "curveLinear",
+                "radius": 3,
+                "styles": {
+                  "highlighted": {
+                    "fill": {
+                      "color": "black",
+                      "opacity": 0.8
+                    },
+                    "stroke": {
+                      "color": "black",
+                      "dashArray": 0,
+                      "opacity": 0.8,
+                      "width": 1
+                    }
+                  },
+                  "muted": {
+                    "fill": {
+                      "color": "black",
+                      "opacity": 0.8
+                    },
+                    "stroke": {
+                      "color": "black",
+                      "dashArray": 0,
+                      "opacity": 0.8,
+                      "width": 1
+                    }
+                  },
+                  "normal": {
+                    "fill": {
+                      "color": "black",
+                      "opacity": 0.8
+                    },
+                    "stroke": {
+                      "color": "black",
+                      "dashArray": 0,
+                      "opacity": 0.8,
+                      "width": 1
+                    }
+                  },
+                  "selected": {
+                    "fill": {
+                      "color": "black",
+                      "opacity": 0.8
+                    },
+                    "stroke": {
+                      "color": "black",
+                      "dashArray": 0,
+                      "opacity": 0.8,
+                      "width": 1
+                    }
+                  }
+                },
+                "type": "line"
+              },
+              "enabled": true,
+              "name": "Average Pressure",
+              "plot": 0,
+              "selectable": true,
+              "visible": true
+            }
+          ],
+          "plots": [
+            {
+              "color": "#FFFFFF",
+              "markers": [
+                {
+                  "axis": "",
+                  "display": {
+                    "color": "green",
+                    "dashArray": 0,
+                    "label": {
+                      "font": {
+                        "color": "black",
+                        "size": 10
+                      },
+                      "position": "right",
+                      "style": {
+                        "classes": ""
+                      },
+                      "text": "Excellent"
+                    },
+                    "opacity": 0.5,
+                    "style": {
+                      "classes": ""
+                    },
+                    "width": 1
+                  },
+                  "max": 5,
+                  "min": 4.7,
+                  "type": "band",
+                  "value": 0
+                },
+                {
+                  "axis": "",
+                  "display": {
+                    "color": "orange",
+                    "dashArray": 0,
+                    "label": {
+                      "font": {
+                        "color": "black",
+                        "size": 10
+                      },
+                      "position": "right",
+                      "style": {
+                        "classes": "",
+                        "color": "black"
+                      },
+                      "text": "Good"
+                    },
+                    "opacity": 0.5,
+                    "style": {
+                      "classes": ""
+                    },
+                    "width": 1
+                  },
+                  "max": 4.7,
+                  "min": 4.3,
+                  "type": "band",
+                  "value": 0
+                },
+                {
+                  "axis": "",
+                  "display": {
+                    "color": "red",
+                    "dashArray": 0,
+                    "label": {
+                      "font": {
+                        "color": "black",
+                        "size": 10
+                      },
+                      "position": "right",
+                      "style": {
+                        "classes": ""
+                      },
+                      "text": "Poor"
+                    },
+                    "opacity": 0.5,
+                    "style": {
+                      "classes": ""
+                    },
+                    "width": 1
+                  },
+                  "max": 4.3,
+                  "min": 4,
+                  "type": "band",
+                  "value": 0
+                }
+              ],
+              "relativeWeight": 1,
+              "style": {
+                "classes": ""
+              }
+            }
+          ]
+        },
+        "type": "ia.chart.powerchart"
       }
     ],
     "meta": {

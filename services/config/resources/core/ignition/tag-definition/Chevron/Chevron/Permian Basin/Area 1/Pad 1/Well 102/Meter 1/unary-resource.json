@@ -7,7 +7,6 @@
     "udts.json"
   ],
   "attributes": {
-    "config": {},
-    "enabled": false
+    "config": {}
   }
 }

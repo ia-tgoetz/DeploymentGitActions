@@ -1,0 +1,32 @@
+[
+  {
+    "valueSource": "memory",
+    "historyMaxAge": 1,
+    "dataType": "Float4",
+    "historyProvider": "Edge Historian",
+    "historyMaxAgeUnits": "MIN",
+    "name": "Excellent",
+    "historyEnabled": true,
+    "tagType": "AtomicTag"
+  },
+  {
+    "valueSource": "memory",
+    "historyMaxAge": 1,
+    "dataType": "Float4",
+    "historyProvider": "Edge Historian",
+    "historyMaxAgeUnits": "MIN",
+    "name": "Good",
+    "historyEnabled": true,
+    "tagType": "AtomicTag"
+  },
+  {
+    "valueSource": "memory",
+    "historyMaxAge": 1,
+    "dataType": "Float4",
+    "historyProvider": "Edge Historian",
+    "historyMaxAgeUnits": "MIN",
+    "name": "Poor",
+    "historyEnabled": true,
+    "tagType": "AtomicTag"
+  }
+]

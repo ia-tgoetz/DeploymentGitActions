@@ -9,11 +9,11 @@
   ],
   "attributes": {
     "lastModification": {
-      "actor": "unknown",
-      "timestamp": "2026-04-14T00:04:18Z"
+      "actor": "admin",
+      "timestamp": "2026-05-12T12:27:18Z"
     },
     "uuid": "4f033a40-7cf9-4cf6-bc46-8c4fa54d3b7e",
-    "lastModificationSignature": "aa6ee8e8f039c7218beba4f44432d961b44dae48e1fbbde2d1fdeda5c35eeb1a",
-    "enabled": false
+    "lastModificationSignature": "495b877d9179d63b390af0e6c1e60cd64d45ce38aeeb84f1e640e11487e45288",
+    "enabled": true
   }
 }
