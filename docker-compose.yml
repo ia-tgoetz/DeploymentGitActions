@@ -73,7 +73,7 @@ services:
       # security/pki/trusted/certs/). The bind mount overlays just this
       # subdirectory inside the ignition-data named volume, so Ignition
       # can still manage the rest of /data/ at runtime.
-      # - ./services/pki/trusted/clients:/usr/local/bin/ignition/data/config/local/ignition/gateway-network/client/security/pki/trusted/certs
+      - ./services/pki/trusted/clients:/usr/local/bin/ignition/data/config/local/ignition/gateway-network/client/security/pki/trusted/certs
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:8088/StatusPing"]
       interval: 30s
