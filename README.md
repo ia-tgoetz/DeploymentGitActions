@@ -253,21 +253,33 @@ edge-site-houston   # <-- new IPC added here
 
 Commit and push. The next deploy fans out to it.
 
-### 3.4 (Optional) Pre-stage the image tar for air-gapped fallback
+### 3.4 Proxmox LXC Specialized Setup
 
-If the IPC may temporarily lose internet, pre-stage a tar so the deploy still works:
+Running as an LXC container is significantly more resource-efficient than a full VM. This project is fully compatible with Debian/Ubuntu LXC containers in Proxmox with the following adjustments:
+
+#### Mandatory Container Features
+In the Proxmox UI, navigate to **LXC > Options > Features** and ensure these are checked:
+- **Nesting:** Required for Docker to manage filesystem layers.
+- **Keyctl:** Required for Docker's credential management.
+
+#### Docker Storage Driver (Performance)
+- **LVM/Ext4 Storage:** If your Proxmox host uses LVM-Thin or Ext4, Docker will use `overlay2` automatically (provided Nesting is enabled). This is the fastest option.
+- **ZFS Storage:** If your host uses ZFS, the default `overlay2` driver may fail. 
+  - **The "Pro" Fix:** Add a new Mount Point to the LXC (e.g., 20GB) formatted as `ext4` and mounted to `/var/lib/docker`.
+  - **The "Safe" Fix:** Force the `vfs` driver by creating `/etc/docker/daemon.json` with `{"storage-driver": "vfs"}`. Note: `vfs` is significantly slower and uses more disk space.
+
+#### One-Shot Provisioning (Minimal Debian/Ubuntu)
+Minimal LXC templates often lack `git` and `sudo`. Use this one-shot block to prepare a fresh container:
 
 ```bash
-sudo mkdir -p /opt/ignition-images
+# 1. Install prerequisites
+apt update && apt install -y git sudo
 
-# From a workstation with internet:
-docker pull ghcr.io/ia-tgoetz/ignition-edge:8.3.6
-docker save ghcr.io/ia-tgoetz/ignition-edge:8.3.6 -o ignition-edge-8.3.6.tar
-# scp ignition-edge-8.3.6.tar to the IPC, then:
-sudo mv ignition-edge-8.3.6.tar /opt/ignition-images/
+# 2. Setup and Provision
+git clone https://github.com/ia-tgoetz/DeploymentGitActions.git
+cd DeploymentGitActions
+bash scripts/provision-runner.sh "<your-github-token>"
 ```
-
-`scripts/load-image.sh` tries GHCR first and falls back to this tar automatically.
 
 ---
 
