@@ -1,0 +1,15 @@
+{
+  "auditScheduleEnabled": false,
+  "auditSendFrequency": 10,
+  "auditSendFrequencyUnits": "SEC",
+  "historyMaxBatchSize": 10000,
+  "historyScheduleEnabled": false,
+  "historySendFrequency": 10,
+  "historySendFrequencyUnits": "SEC",
+  "journalScheduleEnabled": false,
+  "journalSendFrequency": 10,
+  "journalSendFrequencyUnits": "SEC",
+  "remoteAuditEnabled": false,
+  "remoteHistoryEnabled": false,
+  "remoteJournalEnabled": false
+}

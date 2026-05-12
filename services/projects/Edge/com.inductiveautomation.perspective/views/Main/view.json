@@ -15,6 +15,18 @@
           "text": "My Awesome View"
         },
         "type": "ia.display.label"
+      },
+      {
+        "meta": {
+          "name": "Label_0"
+        },
+        "position": {
+          "basis": "32px"
+        },
+        "props": {
+          "text": "Now Even Better"
+        },
+        "type": "ia.display.label"
       }
     ],
     "meta": {

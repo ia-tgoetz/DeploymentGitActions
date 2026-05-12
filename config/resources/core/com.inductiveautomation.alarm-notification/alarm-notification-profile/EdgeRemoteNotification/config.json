@@ -1,0 +1,15 @@
+{
+  "profile": {
+    "type": "RemoteNotificationProfileType"
+  },
+  "settings": {
+    "remoteInfo": {
+      "serverName": null,
+      "targetProfile": null
+    },
+    "advanced": {
+      "retryDelayMillis": 10000,
+      "maxEvaluationQueueSize": 10000
+    }
+  }
+}
