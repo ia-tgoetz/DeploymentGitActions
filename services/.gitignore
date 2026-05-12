@@ -1,6 +1,6 @@
 # Database files
 *.idb
-
+*.crt
 # Runtime configuration (environment-specific)
 **/local
 
