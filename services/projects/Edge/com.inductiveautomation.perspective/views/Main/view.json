@@ -27,6 +27,18 @@
           "text": "Now Even Better"
         },
         "type": "ia.display.label"
+      },
+      {
+        "meta": {
+          "name": "Label_1"
+        },
+        "position": {
+          "basis": "32px"
+        },
+        "props": {
+          "text": "Wait, It got Better"
+        },
+        "type": "ia.display.label"
       }
     ],
     "meta": {
