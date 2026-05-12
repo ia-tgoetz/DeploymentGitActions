@@ -11,7 +11,7 @@ Automated deployment and configuration sync for Inductive Automation's Ignition 
 5. **Config-as-code:** Ignition projects and the file-based VCS config live in `services/projects/` and `services/config/resources/`, bind-mounted into the container.
 6. **Gateway naming:** each IPC's Ignition gateway name automatically inherits the host's `hostname`, so the central GW's GAN view shows fleet members by IPC identity. Override with the `IGN_NAME` repo Secret if you need a custom name.
 7. **Transmitter identity:** at deploy time, `scripts/configure-transmitter.sh` rewrites `edgeNodeId` in every Cirrus Link transmitter config under `services/config/resources/.../transmitter/<name>/config.json` to match the gateway name. Each IPC publishes to MQTT under its own edge-node ID without per-site config sprawl.
-8. **Fleet fan-out:** `config/fleet.txt` lists every IPC by hostname. The deploy workflow uses a matrix strategy that spawns one job per entry, each pinned to that IPC's runner via a hostname-specific label. A push to `main` deploys to **every** IPC in parallel; `fail-fast: false` keeps a bad IPC from cancelling the rest. Manual dispatch with an `ipc` input targets one IPC for canary deploys.
+8. **Fleet fan-out:** `config/fleet.txt` lists every IPC by hostname. The deploy workflow uses a matrix strategy that spawns one job per entry, each pinned to that IPC's runner via a hostname-specific label. Running the workflow manually (without an `ipc` input) deploys to **every** IPC in parallel; `fail-fast: false` keeps a bad IPC from cancelling the rest. Manual dispatch with an `ipc` input targets one IPC for canary deploys.
 9. **Per-IPC GAN identity (manual):** each Edge auto-generates its own metro keystore on first boot; the Hub admin approves per IPC manually. The pipeline does not bake a shared fleet identity. (An automated fleet-cert flow lived here previously — see git tag `archive/fleet-cert-stack` to recover it.)
 
 ---
@@ -21,7 +21,8 @@ Automated deployment and configuration sync for Inductive Automation's Ignition 
 ```
 .
 ├── .github/workflows/build-image.yml   # CI: builds & pushes the Edge image when build/edgeGwBuild/ changes
-├── .github/workflows/deploy.yml        # CD: deploys to the IPC on every push to main
+├── .github/workflows/deploy.yml        # CD: deploys to the IPC (manual trigger)
+├── .github/workflows/sync-projects.yml # Hot-sync: updates projects/config without a gateway restart
 ├── docker-compose.yml              # Production: Ignition Edge only
 ├── docker-compose.test.yml         # Adds a central GW container for local GAN testing
 ├── .env.example                    # Template — copy to .env per environment
@@ -262,7 +263,7 @@ sudo mv ignition-edge-8.3.6.tar /opt/ignition-images/
 
 ## Phase 4 — First deployment
 
-Push any change to `main` (or use **Actions → Deploy Ignition Edge → Run workflow**). The workflow has two jobs:
+Use **Actions → Deploy Ignition Edge → Run workflow** (or `gh workflow run "Deploy Ignition Edge"`). The workflow has two jobs:
 
 | Job | Where | What |
 |---|---|---|
@@ -595,3 +596,13 @@ Things worth doing once the fleet starts to scale beyond a handful of IPCs:
 
 - **Decide what to do with `services-example/` and `Example Files/`.** They're reference material that informed the current design but aren't used at deploy time. Either move under `docs/reference/` and add a header noting their status, or remove and rely on git history for retrieval.
 - **CI validation of compose / Dockerfile.** Add a workflow that runs `docker compose config` and `hadolint build/edgeGwBuild/Dockerfile` on every PR. Catches typos before they hit a runner.
+ loses its disk.
+- **Fast-rolling tag deployments.** Add a `deploy.yml` input that lets you target a subset of runners by label (e.g. canary 5% of IPCs first). Currently every runner that picks up the workflow runs it.
+
+### Repo hygiene
+
+- **Decide what to do with `services-example/` and `Example Files/`.** They're reference material that informed the current design but aren't used at deploy time. Either move under `docs/reference/` and add a header noting their status, or remove and rely on git history for retrieval.
+- **CI validation of compose / Dockerfile.** Add a workflow that runs `docker compose config` and `hadolint build/edgeGwBuild/Dockerfile` on every PR. Catches typos before they hit a runner.
+le` on every PR. Catches typos before they hit a runner.
+ they hit a runner.
+le` on every PR. Catches typos before they hit a runner.
