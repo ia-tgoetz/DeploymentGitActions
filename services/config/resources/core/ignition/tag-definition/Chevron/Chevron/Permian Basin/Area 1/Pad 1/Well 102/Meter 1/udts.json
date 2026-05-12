@@ -1,0 +1,12 @@
+[
+  {
+    "name": "Meter Data",
+    "typeId": "Meter Data",
+    "tagType": "UdtInstance"
+  },
+  {
+    "name": "Meter Config",
+    "typeId": "Meter Config",
+    "tagType": "UdtInstance"
+  }
+]

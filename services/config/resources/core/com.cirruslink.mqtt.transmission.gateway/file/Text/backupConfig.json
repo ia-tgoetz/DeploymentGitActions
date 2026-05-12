@@ -1,0 +1,14 @@
+{
+  "edgeNodeId": "Edgenode93",
+  "enableAutoPublishing": true,
+  "fileScanRate": 10,
+  "fileScanRateTimeUnit": "SECONDS",
+  "groupId": "Chevron",
+  "messageAckTimeout": 10,
+  "messagePacingPeriod": 1000,
+  "messageSize": 1000,
+  "numberRetries": 3,
+  "submitBasicFileAttributes": true,
+  "tagFolderPath": "Text Transmitter",
+  "tagProvider": "default"
+}

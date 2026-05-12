@@ -1,0 +1,24 @@
+{
+  "profile": {
+    "queryOnly": false,
+    "type": "LOCAL"
+  },
+  "settings": {
+    "dataFilters": {
+      "pathFilterName": "",
+      "pathOrSourceFilterName": "",
+      "sourceFilterName": ""
+    },
+    "eventData": {
+      "dynamicAssociatedData": true,
+      "dynamicConfig": true,
+      "staticAssociatedData": true,
+      "staticConfig": false
+    },
+    "events": {
+      "minPriority": "Low",
+      "storeFromEnabledChange": false,
+      "storeShelvedEvents": false
+    }
+  }
+}
