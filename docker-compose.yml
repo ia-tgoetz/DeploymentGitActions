@@ -5,7 +5,7 @@ services:
     # build/edgeGwBuild/Dockerfile and pushed to GHCR by
     # scripts/push-image-to-ghcr.sh. IPCs pull this; no runtime module mount
     # or install pipeline needed.
-    image: ${IGNITION_IMAGE:-ghcr.io/ia-tgoetz/ignition-edge}:${IGN_RELEASE:-8.3.6}
+    image: ${IGNITION_IMAGE}:${IGN_RELEASE}
     user: 0:0
     container_name: ${IGN_NAME:-ignition-edge}
     # Container's internal $HOSTNAME — set to the IPC hostname so logs,
