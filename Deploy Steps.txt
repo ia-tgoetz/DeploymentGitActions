@@ -2,15 +2,15 @@ Deploy Options:
 
 git clone https://github.com/ia-tgoetz/DeploymentGitActions.git
 cd DeploymentGitActions
-sudo bash scripts/provision-runner.sh {gitActionToken}
+sudo bash scripts/provision-runner.sh A3536ISHAO3CUG4XIKX63ATKACK7K
 
 
 stage system Remove Runner:
 
+
 cd /opt/actions-runner
 sudo ./svc.sh stop
 sudo ./svc.sh uninstall
-
 sudo rm -rf /opt/actions-runner
 sudo userdel -r github-runner
 cd /home/$USER/DeploymentGitActions

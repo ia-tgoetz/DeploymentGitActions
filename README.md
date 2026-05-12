@@ -22,6 +22,7 @@ Automated deployment and configuration sync for Inductive Automation's Ignition 
 .
 ├── .github/workflows/build-image.yml   # CI: builds & pushes the Edge image when build/edgeGwBuild/ changes
 ├── .github/workflows/deploy.yml        # CD: deploys to the IPC on every push to main
+├── .github/workflows/sync-projects.yml # Hot-sync: updates projects/config without a gateway restart
 ├── docker-compose.yml              # Production: Ignition Edge only
 ├── docker-compose.test.yml         # Adds a central GW container for local GAN testing
 ├── .env.example                    # Template — copy to .env per environment
@@ -589,6 +590,13 @@ Things worth doing once the fleet starts to scale beyond a handful of IPCs:
 - **Branch protection enforced on `main` for everyone.** Currently configured but admins (you) can bypass. At fleet scale, enforce strictly — every change goes through PR review since the runner executes whatever lands.
 - **Rotate the initial gateway admin password.** `GATEWAY_ADMIN_PASSWORD` only applies on first-DB-init. Document a runbook for password rotation via the gateway REST API once a fleet is live (no `down -v` allowed at that point — would wipe production data).
 - **Backup automation.** Schedule periodic `gwbk` exports from each gateway to a central object store. The current setup has no disaster-recovery story for an IPC that loses its disk.
+- **Fast-rolling tag deployments.** Add a `deploy.yml` input that lets you target a subset of runners by label (e.g. canary 5% of IPCs first). Currently every runner that picks up the workflow runs it.
+
+### Repo hygiene
+
+- **Decide what to do with `services-example/` and `Example Files/`.** They're reference material that informed the current design but aren't used at deploy time. Either move under `docs/reference/` and add a header noting their status, or remove and rely on git history for retrieval.
+- **CI validation of compose / Dockerfile.** Add a workflow that runs `docker compose config` and `hadolint build/edgeGwBuild/Dockerfile` on every PR. Catches typos before they hit a runner.
+ loses its disk.
 - **Fast-rolling tag deployments.** Add a `deploy.yml` input that lets you target a subset of runners by label (e.g. canary 5% of IPCs first). Currently every runner that picks up the workflow runs it.
 
 ### Repo hygiene
