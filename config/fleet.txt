@@ -19,5 +19,5 @@
 # Lines starting with '#' and blank lines are ignored.
 # Trailing whitespace is trimmed.
 
-edge-east
-edge-site-dallas
+edge1
+edge2
