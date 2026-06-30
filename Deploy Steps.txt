@@ -1,12 +1,4 @@
-Deploy Options:
-
-git clone https://github.com/ia-tgoetz/DeploymentGitActions.git
-cd DeploymentGitActions
-sudo bash scripts/provision-runner.sh A3536ISHAO3CUG4XIKX63ATKACK7K
-
-
 stage system Remove Runner:
-
 
 cd /opt/actions-runner
 sudo ./svc.sh stop
@@ -17,13 +9,3 @@ cd /home/$USER/DeploymentGitActions
 GATEWAY_ADMIN_USERNAME=admin GATEWAY_ADMIN_PASSWORD=hfL3nvK9JmYntvBRjoXp docker compose down -v
 cd /home/$USER
 rm -rf DeploymentGitActions
-
-
-Change Hostname
-
-
-docker compose down
-GATEWAY_ADMIN_USERNAME=admin GATEWAY_ADMIN_PASSWORD=password docker compose down -v
-
-https://github.com/ia-tgoetz/DeploymentGitActions/actions/workflows/deploy.yml
-
